@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Oscar component styles — these are injected by the component itself via GlobalStyles */
