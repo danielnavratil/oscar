@@ -201,7 +201,7 @@ export default function App() {
       try {
         const res = await fetch("/api/claude", {
           method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:50,
+          body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:50,
             messages:[{role:"user",content:[
               {type:"image",source:{type:"url",url:imgUrl(img)}},
               {type:"text",text:`Pick one category from: ${CATEGORIES.join(", ")}.\nPrompt: "${img.prompt.substring(0,250)}"\nReply with ONLY the category name.`}
@@ -679,7 +679,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     try {
       const res = await fetch("/api/claude", {
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:120,
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:120,
           messages:[{role:"user",content:[
             {type:"image",source:{type:"url",url:imgUrl(img)}},
             {type:"text",text:`You're helping pair images for a print magazine spread. This is image A.\nCandidates:\n${candidates.map(c=>`ID: ${c.id}\nPrompt: "${c.prompt.substring(0,120)}"`).join("\n---\n")}\nWhich candidate makes the best magazine spread pair with image A? Consider visual harmony, tonal balance, thematic complementarity. Reply with ONLY the UUID.`}
