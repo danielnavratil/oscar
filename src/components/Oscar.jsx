@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadImages, uploadImages, addBookmark, removeBookmark, subscribeToChanges } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges } from "@/lib/db";
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
 const TEAM = ["Daniel","Hongrae","Chase"];
@@ -129,9 +129,9 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    loadImages()
-      .then(data => { if (!cancelled) setImages(data); })
-      .catch(err => console.error("Failed to load images:", err));
+    loadIssueJson()
+      .then(data => { if (!cancelled && data) setImages(data); })
+      .catch(err => console.error("Failed to load issue JSON:", err));
     return () => { cancelled = true; };
   }, []);
 
@@ -184,11 +184,11 @@ export default function App() {
     const r = new FileReader();
     r.onload = ev => {
       try {
-        const d = JSON.parse(ev.target.result);
-        const parsed = Array.isArray(d) ? d : Object.values(d);
+        const raw = ev.target.result;
+        const parsed = parseIssueJson(raw);
         setImages(parsed);
         setTab("browse");
-        uploadImages(parsed).catch(err => console.error("Failed to upload images:", err));
+        uploadIssueJson(raw).catch(err => console.error("Failed to upload issue JSON:", err));
       } catch { alert("Invalid JSON"); }
     };
     r.readAsText(f);

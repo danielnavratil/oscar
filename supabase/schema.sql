@@ -24,9 +24,10 @@ create table if not exists images (
 create index if not exists images_issue_idx on images(issue_id);
 
 -- ── BOOKMARKS ─────────────────────────────────────────────────
+-- image_id matches IDs in issue JSON (Storage); no FK to images table
 create table if not exists bookmarks (
   id uuid default gen_random_uuid() primary key,
-  image_id text references images(id) on delete cascade,
+  image_id text not null,
   voter_name text not null,
   issue_id text references issues(id) on delete cascade,
   created_at timestamptz default now(),

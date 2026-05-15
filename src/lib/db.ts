@@ -10,53 +10,62 @@ import { supabase } from './supabase';
 
 const ISSUE_ID = '38'; // TODO: make dynamic when supporting multiple issues
 
-export type BookmarkImage = {
-  id: string;
-  prompt?: string;
-  user_name?: string;
-  aspect?: string;
-  parent_grid?: number;
-  likes?: number;
-  enqueue_time?: string;
-};
+// ── ISSUE JSON (Storage) ──────────────────────────────────────
 
-function imageRow(img: BookmarkImage) {
-  return {
-    id: img.id,
-    issue_id: ISSUE_ID,
-    prompt: img.prompt,
-    user_name: img.user_name,
-    aspect: img.aspect,
-    parent_grid: img.parent_grid,
-    likes: img.likes ?? 0,
-    enqueue_time: img.enqueue_time,
-  };
+const ISSUE_JSON_BUCKET = 'issue-json';
+const ISSUE_JSON_PATH = 'issue-38.json';
+
+function isStorageNotFound(error: { message?: string; statusCode?: string | number }) {
+  const code = error.statusCode;
+  return code === 404 || code === '404' || /not found|does not exist/i.test(error.message ?? '');
 }
 
-// ── IMAGES ────────────────────────────────────────────────────
+/** Parse raw issue JSON (array or object map) into an image array. */
+export function parseIssueJson(raw: string): unknown[] {
+  const d = JSON.parse(raw);
+  return Array.isArray(d) ? d : Object.values(d as Record<string, unknown>);
+}
 
-/** Upload the full JSON array of images for the issue */
-export async function uploadImages(images: BookmarkImage[]) {
-  const rows = images.map(imageRow);
+/** Upload raw JSON text to Storage (overwrites existing file). */
+export async function uploadIssueJson(rawJson: string) {
+  const bytes = new TextEncoder().encode(rawJson).length;
+  console.log(`[uploadIssueJson] Uploading ${ISSUE_JSON_PATH} (~${(bytes / 1024 / 1024).toFixed(2)} MB)`);
 
-  // Upsert in batches of 500 to avoid request size limits
-  for (let i = 0; i < rows.length; i += 500) {
-    const { error } = await supabase
-      .from('images')
-      .upsert(rows.slice(i, i + 500), { onConflict: 'id' });
-    if (error) throw error;
+  const blob = new Blob([rawJson], { type: 'application/json' });
+  const { error } = await supabase.storage
+    .from(ISSUE_JSON_BUCKET)
+    .upload(ISSUE_JSON_PATH, blob, {
+      upsert: true,
+      contentType: 'application/json',
+    });
+
+  if (error) {
+    console.error('[uploadIssueJson] Failed:', error);
+    throw error;
   }
+
+  console.log(`[uploadIssueJson] Uploaded ${ISSUE_JSON_PATH}`);
 }
 
-/** Load all images for the current issue */
-export async function loadImages() {
-  const { data, error } = await supabase
-    .from('images')
-    .select('*')
-    .eq('issue_id', ISSUE_ID)
-    .order('enqueue_time', { ascending: true });
-  if (error) throw error;
-  return data ?? [];
+/** Download issue JSON from Storage, or null if the file does not exist. */
+export async function loadIssueJson(): Promise<unknown[] | null> {
+  const { data, error } = await supabase.storage
+    .from(ISSUE_JSON_BUCKET)
+    .download(ISSUE_JSON_PATH);
+
+  if (error) {
+    if (isStorageNotFound(error)) {
+      console.log(`[loadIssueJson] No file at ${ISSUE_JSON_BUCKET}/${ISSUE_JSON_PATH}`);
+      return null;
+    }
+    console.error('[loadIssueJson] Failed:', error);
+    throw error;
+  }
+
+  const text = await data.text();
+  const images = parseIssueJson(text);
+  console.log(`[loadIssueJson] Loaded ${images.length} images from ${ISSUE_JSON_PATH}`);
+  return images;
 }
 
 // ── BOOKMARKS ─────────────────────────────────────────────────
