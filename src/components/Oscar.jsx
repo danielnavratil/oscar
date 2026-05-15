@@ -194,16 +194,28 @@ export default function App() {
     r.readAsText(f);
   };
 
+  const toBase64 = async (url) => {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ data: reader.result.split(',')[1], media_type: blob.type || 'image/webp' });
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
   const categorizeAll = async (imgs, onProgress) => {
     for (let i=0; i<imgs.length; i++) {
       const img = imgs[i];
       if (categories[img.id]) { onProgress(i+1); continue; }
       try {
+        const { data: imgData, media_type } = await toBase64(imgUrl(img));
         const res = await fetch("/api/claude", {
           method:"POST", headers:{"Content-Type":"application/json"},
           body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:50,
             messages:[{role:"user",content:[
-              {type:"image",source:{type:"url",url:imgUrl(img)}},
+              {type:"image",source:{type:"base64",media_type,data:imgData}},
               {type:"text",text:`Pick one category from: ${CATEGORIES.join(", ")}.\nPrompt: "${img.prompt.substring(0,250)}"\nReply with ONLY the category name.`}
             ]}] })
         });
