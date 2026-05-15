@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, createContext, useContext } f
 import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges } from "@/lib/db";
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
+const MAX_CATEGORIZE = 1000;
 const TEAM = ["Daniel","Hongrae","Chase"];
 const COLORS = { Daniel:"#4d8fcc", Hongrae:"#e87a3a", Chase:"#6aaa6a" };
 const REF_TYPES = ["Image Prompt","Style Reference","Character Reference","Omni Reference","Personalization"];
@@ -205,18 +206,40 @@ export default function App() {
     });
   };
 
+  const CATEGORIZE_PROMPT = `You are categorizing Midjourney AI images for a print magazine.
+Choose exactly one category. Use the image as the primary signal; the prompt is secondary context.
+
+- characters: fictional/stylized figures, not realistic portraits
+- people: realistic human subjects
+- abstraction: non-representational shapes, textures, patterns
+- environments: landscapes, nature scenes, outdoor settings
+- design: graphic design, typography, product design, flat illustration
+- surreal + horror: dreamlike, disturbing, or grotesque imagery
+- architecture + interiors: buildings, rooms, urban spaces
+- transportation: vehicles, aircraft, ships
+- plants: botanical, flora, nature close-ups
+- food: meals, ingredients, beverages
+- fine art: painterly, classical art styles
+- humor: comedic, whimsical, absurd
+- sci-fi: futuristic, space, technology
+- fashion: clothing, styling, editorial
+- animals: creatures, wildlife, pets
+
+Reply with ONLY the category name, exactly as written above.`;
+
   const categorizeAll = async (imgs, onProgress) => {
-    for (let i=0; i<imgs.length; i++) {
-      const img = imgs[i];
+    const toProcess = imgs.slice(0, MAX_CATEGORIZE);
+    for (let i=0; i<toProcess.length; i++) {
+      const img = toProcess[i];
       if (categories[img.id]) { onProgress(i+1); continue; }
       try {
         const { data: imgData, media_type } = await toBase64(imgUrl(img));
         const res = await fetch("/api/claude", {
           method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:50,
+          body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:20,
             messages:[{role:"user",content:[
               {type:"image",source:{type:"base64",media_type,data:imgData}},
-              {type:"text",text:`Pick one category from: ${CATEGORIES.join(", ")}.\nPrompt: "${img.prompt.substring(0,250)}"\nReply with ONLY the category name.`}
+              {type:"text",text:`${CATEGORIZE_PROMPT}\n\nPrompt: "${img.prompt.substring(0,250)}"`}
             ]}] })
         });
         const data = await res.json();
@@ -227,6 +250,7 @@ export default function App() {
       } catch (e) { console.error('[categorize] fetch error', e); }
       onProgress(i+1);
     }
+    onProgress(imgs.length);
   };
 
   const collImages = images.filter(i=>allBm.has(i.id));
