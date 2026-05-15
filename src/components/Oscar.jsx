@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote } from "@/lib/db";
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
 const MAX_CATEGORIZE = 1000;
@@ -145,11 +145,37 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    loadCategories()
+      .then(data => { if (!cancelled) setCategories(data); })
+      .catch(err => console.error("Failed to load categories:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadVotes()
+      .then(data => { if (!cancelled) setVotes(data); })
+      .catch(err => console.error("Failed to load votes:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const unsub = subscribeToChanges({
       onBookmarkChange: () => {
         loadBookmarks()
           .then(setBookmarks)
           .catch(err => console.error("Failed to reload bookmarks:", err));
+      },
+      onVoteChange: () => {
+        loadVotes()
+          .then(setVotes)
+          .catch(err => console.error("Failed to reload votes:", err));
+      },
+      onCategoryChange: () => {
+        loadCategories()
+          .then(setCategories)
+          .catch(err => console.error("Failed to reload categories:", err));
       },
     });
     return unsub;
@@ -177,7 +203,22 @@ export default function App() {
       return { ...prev, [user]: m };
     });
   }, [user]);
-  const toggleVote = id => setVotes(p=>{const m=new Set(p[user]||[]);m.has(id)?m.delete(id):m.add(id);return {...p,[user]:m};});
+  const toggleVote = useCallback(id => {
+    if (!user) return;
+    setVotes(prev => {
+      const m = new Set(prev[user] || []);
+      const had = m.has(id);
+      if (had) m.delete(id); else m.add(id);
+      (had ? removeVote(id, user) : addVote(id, user))
+        .catch(err => { console.error("Vote failed:", err); setVotes(prev); });
+      return { ...prev, [user]: m };
+    });
+  }, [user]);
+
+  const updateCategory = useCallback((id, cat) => {
+    setCategories(prev => ({ ...prev, [id]: cat }));
+    dbSetCategory(id, cat).catch(err => console.error("Failed to save category:", err));
+  }, []);
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
 
   const handleUpload = e => {
@@ -246,7 +287,7 @@ Reply with ONLY the category name, exactly as written above.`;
         if (!res.ok) { console.error('[categorize] Anthropic error', res.status, JSON.stringify(data)); continue; }
         const raw=(data.content?.[0]?.text||"").trim().toLowerCase();
         const cat=CATEGORIES.find(c=>raw===c||raw.startsWith(c));
-        if (cat) setCategories(p=>({...p,[img.id]:cat}));
+        if (cat) updateCategory(img.id, cat);
       } catch (e) { console.error('[categorize] fetch error', e); }
       onProgress(i+1);
     }
@@ -293,7 +334,7 @@ Reply with ONLY the category name, exactly as written above.`;
         </header>
         <main style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload}/>}
-          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} setCategories={setCategories} bookmarks={bookmarks} votingOpen={votingOpen} setVotingOpen={setVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
+          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} votingOpen={votingOpen} setVotingOpen={setVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes}/>}
@@ -584,13 +625,13 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
 }
 
 // ── COLLECTION TAB ─────────────────────────────────────────────
-function CollectionTab({ collImages, categories, setCategories, bookmarks, votingOpen, setVotingOpen, categorizeAll, refTypes, setRefTypes }) {
+function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, votingOpen, setVotingOpen, categorizeAll, refTypes, setRefTypes }) {
   const [progress, setProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
   const [showRefsOnly, setShowRefsOnly] = useState(false);
 
-  const setCategory = (id,cat) => setCategories(p=>({...p,[id]:cat}));
+  const setCategory = (id,cat) => onCategoryChange(id,cat);
   const setRefType = (id,types) => setRefTypes(p=>({...p,[id]:types}));
   const run = async () => { setRunning(true); setProgress(0); await categorizeAll(collImages,p=>setProgress(p)); setRunning(false); };
   const categorized = collImages.filter(i=>categories[i.id]).length;
