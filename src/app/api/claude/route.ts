@@ -18,5 +18,8 @@ export async function POST(req: NextRequest) {
   });
 
   const data = await response.json();
+  if (!response.ok) {
+    console.error('[claude route] Anthropic error', response.status, JSON.stringify(data));
+  }
   return NextResponse.json(data, { status: response.status });
 }
