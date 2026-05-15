@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen } from "@/lib/db";
+
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
 const MAX_CATEGORIZE = 1000;
@@ -161,21 +162,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    loadVotingState()
+      .then(data => { if (!cancelled) setVotingOpen(data); })
+      .catch(err => console.error("Failed to load voting state:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const unsub = subscribeToChanges({
       onBookmarkChange: () => {
-        loadBookmarks()
-          .then(setBookmarks)
-          .catch(err => console.error("Failed to reload bookmarks:", err));
+        loadBookmarks().then(setBookmarks).catch(err => console.error("Failed to reload bookmarks:", err));
       },
       onVoteChange: () => {
-        loadVotes()
-          .then(setVotes)
-          .catch(err => console.error("Failed to reload votes:", err));
+        loadVotes().then(setVotes).catch(err => console.error("Failed to reload votes:", err));
       },
       onCategoryChange: () => {
-        loadCategories()
-          .then(setCategories)
-          .catch(err => console.error("Failed to reload categories:", err));
+        loadCategories().then(setCategories).catch(err => console.error("Failed to reload categories:", err));
+      },
+      onVotingStateChange: () => {
+        loadVotingState().then(setVotingOpen).catch(err => console.error("Failed to reload voting state:", err));
       },
     });
     return unsub;
@@ -218,6 +224,14 @@ export default function App() {
   const updateCategory = useCallback((id, cat) => {
     setCategories(prev => ({ ...prev, [id]: cat }));
     dbSetCategory(id, cat).catch(err => console.error("Failed to save category:", err));
+  }, []);
+
+  const toggleVotingOpen = useCallback(() => {
+    setVotingOpen(prev => {
+      const next = !prev;
+      dbSetVotingOpen(next).catch(err => console.error("Failed to save voting state:", err));
+      return next;
+    });
   }, []);
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
 
@@ -334,7 +348,7 @@ Reply with ONLY the category name, exactly as written above.`;
         </header>
         <main style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload}/>}
-          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} setVotingOpen={setVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
+          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes}/>}
@@ -399,6 +413,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
   const [bmFilter, setBmFilter] = useState(false);
   const [colSize, setColSize] = useState("M");
   const COL_COUNTS = {S:10, M:7, L:5, XL:3};
+  const [chunkPages, setChunkPages] = useState({});
   const [fsIdx, setFsIdx] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
   const [swipeDir, setSwipeDir] = useState(null);
@@ -527,17 +542,24 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"18px 18px 40px"}}>
         {displayedChunks.map(chunk=>{
-          const imgs = bmFilter ? chunk.images.filter(i=>allBm.has(i.id)) : chunk.images;
-          if (!imgs.length) return null;
+          const allImgs = bmFilter ? chunk.images.filter(i=>allBm.has(i.id)) : chunk.images;
+          if (!allImgs.length) return null;
+          const ps = chunkPages[chunk.key] || 200;
+          const imgs = allImgs.slice(0, ps);
           return (
             <div key={chunk.key} style={{marginBottom:34}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:13}}>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em"}}>{chunk.label}</span>
-                <span style={{fontSize:9,color:"var(--tx3)"}}>{imgs.length}</span>
+                <span style={{fontSize:9,color:"var(--tx3)"}}>{allImgs.length}</span>
                 <div style={{flex:1,height:1,background:"var(--bd)"}}/>
               </div>
               <MGrid images={imgs} myBm={myBm} allBm={allBm} onBm={onBm} colCount={COL_COUNTS[colSize]}
                 onFullscreen={img=>{const idx=flatImages.findIndex(i=>i.id===img.id);setFsIdx(Math.max(0,idx));setMode("fullscreen");}}/>
+              {allImgs.length > ps && (
+                <button className="pl" onClick={()=>setChunkPages(p=>({...p,[chunk.key]:ps+200}))} style={{marginTop:10,width:"100%",padding:"7px 0",textAlign:"center"}}>
+                  load more · {allImgs.length - ps} remaining
+                </button>
+              )}
             </div>
           );
         })}
@@ -549,9 +571,9 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
 // ── MASONRY GRID ───────────────────────────────────────────────
 function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, suggestion, onSuggest, showRefs, refTypes, onRefTypeChange, colCount=7 }) {
   return (
-    <div style={{columns:colCount,columnGap:7}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${colCount},1fr)`,gap:7}}>
       {images.map(img=>(
-        <div key={img.id} style={{breakInside:"avoid",marginBottom:7}}>
+        <div key={img.id}>
           <ICard img={img} bm={myBm?.has(img.id)} bmO={allBm?.has(img.id)&&!myBm?.has(img.id)}
             onBm={onBm} onFull={onFullscreen}
             showCat={showCat} cat={categories?.[img.id]} onCat={onCatChange}
@@ -686,7 +708,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
 }
 
 // ── COLLECTION TAB ─────────────────────────────────────────────
-function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, setVotingOpen, categorizeAll, refTypes, setRefTypes }) {
+function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, toggleVotingOpen, categorizeAll, refTypes, setRefTypes }) {
   const [progress, setProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
@@ -717,7 +739,7 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, my
         {refImages.length>0&&<button className={`pl ${showRefsOnly?"em":""}`} onClick={()=>setShowRefsOnly(v=>!v)}>⚠ refs · {taggedRefs.length}/{refImages.length} tagged</button>}
         <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:votingOpen?"#6aaa6a":"var(--tx3)"}}>{votingOpen?"● open":"○ locked"}</span>
-          <button className={`pl ${votingOpen?"em":""}`} onClick={()=>setVotingOpen(v=>!v)}>{votingOpen?"lock voting":"open voting"}</button>
+          <button className={`pl ${votingOpen?"em":""}`} onClick={toggleVotingOpen}>{votingOpen?"lock voting":"open voting"}</button>
         </div>
       </div>
       <div style={{padding:"7px 18px",borderBottom:"1px solid var(--bd)",display:"flex",gap:5,flexWrap:"wrap",flexShrink:0,background:"var(--sf2)"}}>
@@ -797,7 +819,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"16px 18px 40px"}}>
-        <MGrid images={filtered} myBm={myBm} allBm={allBm} onBm={onBm} myVotes={myVotes} voteCount={voteCount} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
+        <MGrid images={filtered} myBm={myBm} allBm={allBm} myVotes={myVotes} voteCount={voteCount} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
       </div>
     </div>
     </>
