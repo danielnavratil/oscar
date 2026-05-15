@@ -334,8 +334,8 @@ Reply with ONLY the category name, exactly as written above.`;
         </header>
         <main style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload}/>}
-          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} votingOpen={votingOpen} setVotingOpen={setVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
-          {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
+          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} setVotingOpen={setVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
+          {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes}/>}
         </main>
@@ -396,7 +396,9 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
   const [mode, setMode] = useState("grid");
   const [numChunks, setNumChunks] = useState(3);
   const [chunkFilter, setChunkFilter] = useState(null);
-  const [chunkPages, setChunkPages] = useState({});
+  const [bmFilter, setBmFilter] = useState(false);
+  const [colSize, setColSize] = useState("M");
+  const COL_COUNTS = {S:10, M:7, L:5, XL:3};
   const [fsIdx, setFsIdx] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
   const [swipeDir, setSwipeDir] = useState(null);
@@ -471,10 +473,10 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
     const bm = myBm.has(img.id);
     return (
       <div style={{display:"flex",height:"calc(100vh - 50px)",background:"var(--bg)"}}>
-        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"28px 36px",position:"relative",overflow:"hidden"}}>
-          <button onClick={()=>{setSwipeDir(null);setFsIdx(i=>Math.max(i-1,0));}} style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>‹</button>
-          <img src={imgUrl(img)} alt="" className={`fs-img${swipeDir?` swipe-${swipeDir}`:""}`} style={{maxHeight:"calc(100vh - 120px)",maxWidth:"100%",objectFit:"contain",display:"block"}} onError={e=>e.target.style.opacity=".2"}/>
-          <button onClick={()=>{setSwipeDir(null);setFsIdx(i=>Math.min(i+1,flatImages.length-1));}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>›</button>
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"28px 36px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>setMode("grid")}>
+          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.max(i-1,0));}} style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>‹</button>
+          <img src={imgUrl(img)} alt="" className={`fs-img${swipeDir?` swipe-${swipeDir}`:""}`} style={{maxHeight:"calc(100vh - 120px)",maxWidth:"100%",objectFit:"contain",display:"block",cursor:"default"}} onClick={e=>e.stopPropagation()} onError={e=>e.target.style.opacity=".2"}/>
+          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.min(i+1,flatImages.length-1));}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>›</button>
         </div>
         <div style={{width:288,borderLeft:"1px solid var(--bd)",padding:22,display:"flex",flexDirection:"column",gap:16,overflowY:"auto",background:"var(--sf)",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -504,8 +506,9 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
         <button className={`pl ${mode==="grid"?"on":""}`} onClick={()=>setMode("grid")}>grid [G]</button>
         <button className={`pl ${mode==="fullscreen"?"on":""}`} onClick={()=>setMode("fullscreen")}>fullscreen [F]</button>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
-        <button className={`pl ${!chunkFilter?"on":""}`} onClick={()=>setChunkFilter(null)}>all</button>
-        {chunks.map((c,i)=><button key={c.key} className={`pl ${chunkFilter===c.key?"on":""}`} onClick={()=>setChunkFilter(c.key)} style={{fontSize:9}}>{c.label} <span style={{opacity:.4}}>{c.images.length}</span></button>)}
+        <button className={`pl ${!chunkFilter&&!bmFilter?"on":""}`} onClick={()=>{setChunkFilter(null);setBmFilter(false);}}>all</button>
+        {chunks.map((c,i)=><button key={c.key} className={`pl ${chunkFilter===c.key?"on":""}`} onClick={()=>{setChunkFilter(c.key);setBmFilter(false);}} style={{fontSize:9}}>{c.label} <span style={{opacity:.4}}>{c.images.length}</span></button>)}
+        <button className={`pl ${bmFilter?"on":""}`} onClick={()=>{setBmFilter(v=>!v);setChunkFilter(null);}}>bookmarked <span style={{opacity:.4}}>{allBm.size}</span></button>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
         <div style={{display:"flex",alignItems:"center",gap:5}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>split</span>
@@ -513,6 +516,10 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx)",minWidth:14,textAlign:"center"}}>{numChunks}</span>
           <button className="pl" onClick={()=>setNumChunks(n=>Math.min(10,n+1))} style={{padding:"2px 7px"}}>+</button>
         </div>
+        <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
+        {["S","M","L","XL"].map(s=>(
+          <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
+        ))}
         <div style={{marginLeft:"auto",display:"flex",gap:7,alignItems:"center"}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{images.length.toLocaleString()}</span>
           <label className="pl" style={{cursor:"pointer"}}>replace<input type="file" accept=".json" onChange={onUpload} style={{display:"none"}}/></label>
@@ -520,17 +527,17 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"18px 18px 40px"}}>
         {displayedChunks.map(chunk=>{
-          const ps = chunkPages[chunk.key]||80;
+          const imgs = bmFilter ? chunk.images.filter(i=>allBm.has(i.id)) : chunk.images;
+          if (!imgs.length) return null;
           return (
             <div key={chunk.key} style={{marginBottom:34}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:13}}>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em"}}>{chunk.label}</span>
-                <span style={{fontSize:9,color:"var(--tx3)"}}>{chunk.images.length}</span>
+                <span style={{fontSize:9,color:"var(--tx3)"}}>{imgs.length}</span>
                 <div style={{flex:1,height:1,background:"var(--bd)"}}/>
               </div>
-              <MGrid images={chunk.images.slice(0,ps)} myBm={myBm} allBm={allBm} onBm={onBm}
+              <MGrid images={imgs} myBm={myBm} allBm={allBm} onBm={onBm} colCount={COL_COUNTS[colSize]}
                 onFullscreen={img=>{const idx=flatImages.findIndex(i=>i.id===img.id);setFsIdx(Math.max(0,idx));setMode("fullscreen");}}/>
-              {chunk.images.length>ps&&<button className="pl" onClick={()=>setChunkPages(p=>({...p,[chunk.key]:ps+80}))} style={{marginTop:10,width:"100%",padding:"7px 0",textAlign:"center"}}>load more · {chunk.images.length-ps} remaining</button>}
             </div>
           );
         })}
@@ -540,9 +547,9 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
 }
 
 // ── MASONRY GRID ───────────────────────────────────────────────
-function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, suggestion, onSuggest, showRefs, refTypes, onRefTypeChange }) {
+function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, suggestion, onSuggest, showRefs, refTypes, onRefTypeChange, colCount=7 }) {
   return (
-    <div style={{columns:"175px",columnGap:7}}>
+    <div style={{columns:colCount,columnGap:7}}>
       {images.map(img=>(
         <div key={img.id} style={{breakInside:"avoid",marginBottom:7}}>
           <ICard img={img} bm={myBm?.has(img.id)} bmO={allBm?.has(img.id)&&!myBm?.has(img.id)}
@@ -564,7 +571,10 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
   const [refOpen, setRefOpen] = useState(false);
 
   const handleClick = e => {
-    if ((e.metaKey||e.ctrlKey) && onBm) { e.stopPropagation(); onBm(img.id); return; }
+    if (e.metaKey||e.ctrlKey) {
+      if (onBm) { e.stopPropagation(); onBm(img.id); return; }
+      if (onVote) { e.stopPropagation(); onVote(img.id); return; }
+    }
     if (showSel) onSel?.(img); else onFull?.(img);
   };
 
@@ -624,12 +634,65 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
   );
 }
 
+// ── FULLSCREEN VIEWER ──────────────────────────────────────────
+function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
+  const [idx, setIdx] = useState(startIdx);
+  const idxRef = useRef(idx);
+  const imgsRef = useRef(images);
+  useEffect(() => { idxRef.current = idx; }, [idx]);
+  useEffect(() => { imgsRef.current = images; }, [images]);
+
+  useEffect(() => {
+    const h = e => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "ArrowLeft") setIdx(i => Math.max(i-1, 0));
+      if (e.key === "ArrowRight") setIdx(i => Math.min(i+1, imgsRef.current.length-1));
+      if ((e.metaKey||e.ctrlKey) && onBm) { const img=imgsRef.current[idxRef.current]; if(img) onBm(img.id); }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose, onBm]);
+
+  const img = images[idx];
+  if (!img) return null;
+  const bm = myBm?.has(img.id);
+  const voted = myVotes?.has(img.id);
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",background:"var(--bg)"}}>
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"28px 36px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={onClose}>
+        <button onClick={e=>{e.stopPropagation();setIdx(i=>Math.max(i-1,0));}} style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>‹</button>
+        <img src={imgUrl(img)} alt="" style={{maxHeight:"calc(100vh - 120px)",maxWidth:"100%",objectFit:"contain",display:"block",cursor:"default"}} onClick={e=>e.stopPropagation()} onError={e=>e.target.style.opacity=".2"}/>
+        <button onClick={e=>{e.stopPropagation();setIdx(i=>Math.min(i+1,images.length-1));}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>›</button>
+      </div>
+      <div style={{width:288,borderLeft:"1px solid var(--bd)",padding:22,display:"flex",flexDirection:"column",gap:16,overflowY:"auto",background:"var(--sf)",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{idx+1} / {images.length}</span>
+          <button className="pl" onClick={onClose}>← grid</button>
+        </div>
+        <div>
+          <div style={{fontSize:9,color:"var(--tx3)",fontFamily:"'DM Mono',monospace",letterSpacing:".1em",marginBottom:8}}>PROMPT</div>
+          <p style={{fontSize:11,color:"var(--tx2)",lineHeight:1.75,fontFamily:"'DM Mono',monospace"}}>{img.prompt}</p>
+        </div>
+        <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)"}}>@{img.user_name}</div>
+        {onBm&&<button className={bm?"ab":"pl"} onClick={()=>onBm(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{bm?"✓ bookmarked":"bookmark"}</button>}
+        {onVote&&<button className={voted?"ab":"pl"} onClick={()=>onVote(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{voted?"✓ voted":"vote"}</button>}
+        <div style={{borderTop:"1px solid var(--bd)",paddingTop:14,fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",lineHeight:2.5}}>
+          ← →  navigate{onBm?" · ⌘  bookmark":""}{onVote?" · ⌘  vote":""}<br/>Esc  close · click bg  close
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── COLLECTION TAB ─────────────────────────────────────────────
-function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, votingOpen, setVotingOpen, categorizeAll, refTypes, setRefTypes }) {
+function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, setVotingOpen, categorizeAll, refTypes, setRefTypes }) {
   const [progress, setProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
   const [showRefsOnly, setShowRefsOnly] = useState(false);
+  const [fsOpen, setFsOpen] = useState(false);
+  const [fsIdx, setFsIdx] = useState(0);
 
   const setCategory = (id,cat) => onCategoryChange(id,cat);
   const setRefType = (id,types) => setRefTypes(p=>({...p,[id]:types}));
@@ -639,8 +702,11 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, vo
   const taggedRefs = refImages.filter(i=>refTypes[i.id]?.length);
   let filtered = catFilter ? collImages.filter(i=>categories[i.id]===catFilter) : collImages;
   if (showRefsOnly) filtered = filtered.filter(i=>hasRefs(i.prompt));
+  const openFs = img => { setFsIdx(filtered.findIndex(i=>i.id===img.id)); setFsOpen(true); };
 
   return (
+    <>
+    {fsOpen&&<FSViewer images={filtered} startIdx={fsIdx} onClose={()=>setFsOpen(false)} myBm={myBm} onBm={onBm}/>}
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 50px)",overflow:"hidden"}}>
       <div style={{padding:"9px 18px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",gap:9,flexShrink:0,flexWrap:"wrap",background:"var(--sf2)"}}>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{collImages.length} bookmarked</span>
@@ -672,23 +738,27 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, vo
                 <span style={{fontSize:9,color:"var(--tx3)"}}>{imgs.length}</span>
                 <div style={{flex:1,height:1,background:"var(--bd)"}}/>
               </div>
-              <MGrid images={imgs} showCat categories={categories} onCatChange={setCategory} showRefs refTypes={refTypes} onRefTypeChange={setRefType}/>
+              <MGrid images={imgs} myBm={myBm} allBm={allBm} onBm={onBm} showCat categories={categories} onCatChange={setCategory} showRefs refTypes={refTypes} onRefTypeChange={setRefType} onFullscreen={openFs}/>
             </div>
           );
         })}
         {!collImages.length&&<div style={{color:"var(--tx3)",fontSize:12,textAlign:"center",paddingTop:60,fontFamily:"'DM Mono',monospace"}}>no bookmarks yet — go to browse</div>}
       </div>
     </div>
+    </>
   );
 }
 
 // ── VOTE TAB ───────────────────────────────────────────────────
-function VoteTab({ images, votes, myVotes, voteCount, toggleVote, categories, votingOpen, submitted, onSubmit, user }) {
+function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, onBm, categories, votingOpen, submitted, onSubmit, user }) {
   const [showOthers, setShowOthers] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
+  const [fsOpen, setFsOpen] = useState(false);
+  const [fsIdx, setFsIdx] = useState(0);
   const myVoteCount = images.filter(i=>myVotes.has(i.id)).length;
   const hasSubmitted = submitted.has(user);
   const filtered = catFilter ? images.filter(i=>categories[i.id]===catFilter) : images;
+  const openFs = img => { setFsIdx(filtered.findIndex(i=>i.id===img.id)); setFsOpen(true); };
 
   if (!votingOpen) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"calc(100vh - 50px)",flexDirection:"column",gap:10}}>
@@ -699,6 +769,8 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, categories, vo
   );
 
   return (
+    <>
+    {fsOpen&&<FSViewer images={filtered} startIdx={fsIdx} onClose={()=>setFsOpen(false)} myBm={myBm} onBm={onBm} myVotes={myVotes} onVote={toggleVote}/>}
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 50px)",overflow:"hidden"}}>
       <div style={{padding:"9px 18px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",gap:8,flexShrink:0,flexWrap:"wrap",background:"var(--sf2)"}}>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx)"}}>{myVoteCount} voted</span>
@@ -725,9 +797,10 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, categories, vo
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"16px 18px 40px"}}>
-        <MGrid images={filtered} myVotes={myVotes} voteCount={voteCount} onVote={toggleVote} showVotes votes={showOthers?votes:{}}/>
+        <MGrid images={filtered} myBm={myBm} allBm={allBm} onBm={onBm} myVotes={myVotes} voteCount={voteCount} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
       </div>
     </div>
+    </>
   );
 }
 
