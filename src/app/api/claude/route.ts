@@ -1,20 +1,17 @@
-/**
- * /api/claude — Server-side proxy for Anthropic API calls.
- *
- * Oscar calls this endpoint instead of Anthropic directly so the API key
- * is never exposed to the client/browser.
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'Missing ANTHROPIC_API_KEY' }, { status: 500 });
+  }
+
   const body = await req.json();
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY!,
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
