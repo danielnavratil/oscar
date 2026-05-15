@@ -208,7 +208,7 @@ export default function App() {
             ]}] })
         });
         const data = await res.json();
-        if (!res.ok) { console.error('[categorize] Anthropic error', res.status, data); continue; }
+        if (!res.ok) { console.error('[categorize] Anthropic error', res.status, JSON.stringify(data)); continue; }
         const raw=(data.content?.[0]?.text||"").trim().toLowerCase();
         const cat=CATEGORIES.find(c=>raw===c||raw.startsWith(c));
         if (cat) setCategories(p=>({...p,[img.id]:cat}));
