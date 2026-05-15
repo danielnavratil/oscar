@@ -76,16 +76,10 @@ export async function loadBookmarks(): Promise<Record<string, Set<string>>> {
   return result;
 }
 
-/** Ensure image exists in DB, then add bookmark (satisfies FK on image_id). */
-export async function addBookmark(image: BookmarkImage, voterName: string) {
-  const { error: imgError } = await supabase
-    .from('images')
-    .upsert(imageRow(image), { onConflict: 'id' });
-  if (imgError) throw imgError;
-
+export async function addBookmark(imageId: string, voterName: string) {
   const { error } = await supabase
     .from('bookmarks')
-    .insert({ image_id: image.id, voter_name: voterName, issue_id: ISSUE_ID });
+    .insert({ image_id: imageId, voter_name: voterName, issue_id: ISSUE_ID });
   if (error && error.code !== '23505') throw error; // ignore duplicate
 }
 

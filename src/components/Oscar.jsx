@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, addBookmark, removeBookmark, subscribeToChanges } from "@/lib/db";
+import { loadBookmarks, loadImages, uploadImages, addBookmark, removeBookmark, subscribeToChanges } from "@/lib/db";
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
 const TEAM = ["Daniel","Hongrae","Chase"];
@@ -129,6 +129,14 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    loadImages()
+      .then(data => { if (!cancelled) setImages(data); })
+      .catch(err => console.error("Failed to load images:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     loadBookmarks()
       .then(data => { if (!cancelled) setBookmarks(data); })
       .catch(err => console.error("Failed to load bookmarks:", err));
@@ -156,33 +164,33 @@ export default function App() {
 
   const toggleBm = useCallback((id) => {
     if (!user) return;
-    const img = images.find(i => i.id === id);
     setBookmarks(prev => {
       const m = new Set(prev[user] || []);
       const had = m.has(id);
       if (had) m.delete(id); else m.add(id);
-      let op;
-      if (had) {
-        op = removeBookmark(id, user);
-      } else if (!img) {
-        op = Promise.reject(new Error(`Image ${id} not in local state`));
-      } else {
-        op = addBookmark(img, user);
-      }
+      const op = had ? removeBookmark(id, user) : addBookmark(id, user);
       op.catch(err => {
         console.error("Bookmark failed:", err);
         setBookmarks(prev);
       });
       return { ...prev, [user]: m };
     });
-  }, [user, images]);
+  }, [user]);
   const toggleVote = id => setVotes(p=>{const m=new Set(p[user]||[]);m.has(id)?m.delete(id):m.add(id);return {...p,[user]:m};});
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
 
   const handleUpload = e => {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
-    r.onload = ev => { try { const d = JSON.parse(ev.target.result); setImages(Array.isArray(d)?d:Object.values(d)); setTab("browse"); } catch { alert("Invalid JSON"); } };
+    r.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        const parsed = Array.isArray(d) ? d : Object.values(d);
+        setImages(parsed);
+        setTab("browse");
+        uploadImages(parsed).catch(err => console.error("Failed to upload images:", err));
+      } catch { alert("Invalid JSON"); }
+    };
     r.readAsText(f);
   };
 
