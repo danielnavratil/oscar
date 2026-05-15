@@ -8,7 +8,7 @@ const SIZES = ["full bleed","inset small","inset large"];
 
 const ThemeCtx = createContext("light");
 
-const imgUrl = img => `/api/image-proxy?url=${encodeURIComponent(`https://cdn.midjourney.com/${img.id}/0_${img.parent_grid}_640_N.webp`)}`;
+const imgUrl = img => `https://cdn.midjourney.com/${img.id}/0_${img.parent_grid}_640_N.webp`;
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
 const selStyle = (dark) => ({ background:"transparent", border:`1px solid var(--bd)`, color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" });
 
