@@ -1,4 +1,7 @@
+"use client";
+
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { loadBookmarks, addBookmark, removeBookmark, subscribeToChanges } from "@/lib/db";
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
 const TEAM = ["Daniel","Hongrae","Chase"];
@@ -124,6 +127,25 @@ export default function App() {
   const [refTypes, setRefTypes] = useState({});
   const [tab, setTab] = useState("browse");
 
+  useEffect(() => {
+    let cancelled = false;
+    loadBookmarks()
+      .then(data => { if (!cancelled) setBookmarks(data); })
+      .catch(err => console.error("Failed to load bookmarks:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToChanges({
+      onBookmarkChange: () => {
+        loadBookmarks()
+          .then(setBookmarks)
+          .catch(err => console.error("Failed to reload bookmarks:", err));
+      },
+    });
+    return unsub;
+  }, []);
+
   const myBm = bookmarks[user] || new Set();
   const allBm = new Set(Object.values(bookmarks).flatMap(s=>[...s]));
   const myVotes = votes[user] || new Set();
@@ -132,7 +154,17 @@ export default function App() {
   const proposals = pairs.filter(p=>p.type==="proposal");
   const confirmedPairedIds = new Set(confirmedPairs.flatMap(p=>[p.a.id,p.b.id]));
 
-  const toggleBm = id => setBookmarks(p=>{const m=new Set(p[user]||[]);m.has(id)?m.delete(id):m.add(id);return {...p,[user]:m};});
+  const toggleBm = useCallback((id) => {
+    if (!user) return;
+    setBookmarks(prev => {
+      const m = new Set(prev[user] || []);
+      const had = m.has(id);
+      if (had) m.delete(id); else m.add(id);
+      const op = had ? removeBookmark(id, user) : addBookmark(id, user);
+      op.catch(() => setBookmarks(prev));
+      return { ...prev, [user]: m };
+    });
+  }, [user]);
   const toggleVote = id => setVotes(p=>{const m=new Set(p[user]||[]);m.has(id)?m.delete(id):m.add(id);return {...p,[user]:m};});
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
 
