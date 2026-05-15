@@ -296,7 +296,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} setCategories={setCategories} bookmarks={bookmarks} votingOpen={votingOpen} setVotingOpen={setVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user}/>}
-          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} refTypes={refTypes}/>}
+          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes}/>}
         </main>
       </div>
     </ThemeCtx.Provider>
@@ -822,9 +822,31 @@ function PairCard({ pair, i, getImg, upd, del, categories, dim }) {
 }
 
 // ── EXPORT TAB ─────────────────────────────────────────────────
-function ExportTab({ pairs, images, categories, votes, refTypes }) {
+function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes }) {
   const getImg = id => images.find(i=>i.id===id);
   const vc = id => Object.values(votes).filter(s=>s.has(id)).length;
+
+  const allBm = new Set(Object.values(bookmarks).flatMap(s=>[...s]));
+
+  const fmtImg = (img) => ({
+    id: img.id,
+    username: img.user_name,
+    prompt: img.prompt,
+    category: categories[img.id] || null,
+    mjUrl: `https://www.midjourney.com/jobs/${img.id}?index=0`,
+    votes: vc(img.id),
+    votedBy: Object.entries(votes).filter(([,s])=>s.has(img.id)).map(([n])=>n),
+    bookmarkedBy: Object.entries(bookmarks).filter(([,s])=>s.has(img.id)).map(([n])=>n),
+  });
+
+  const downloadJson = (data, filename) => {
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
+  };
+
+  const bookmarkedImages = [...allBm].map(id=>getImg(id)).filter(Boolean).map(fmtImg)
+    .sort((a,b)=>b.votes-a.votes);
+  const votedImages = bookmarkedImages.filter(i=>i.votes>0);
 
   const data = pairs.map((p,i)=>{
     const fmt = (img,side,size) => img ? {
@@ -841,16 +863,25 @@ function ExportTab({ pairs, images, categories, votes, refTypes }) {
     return { pair:i+1, imageA:fmt(iA,p.a.side,p.a.size), imageB:fmt(iB,p.b.side,p.b.size) };
   });
 
-  const download = () => {
-    const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-    const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="oscar-issue-38-pairs.json"; a.click();
-  };
-
   return (
     <div style={{padding:"28px",maxWidth:860}}>
       <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
       <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-        <button className="ab" onClick={download} disabled={!pairs.length}>Download pairs JSON</button>
+        <button className="ab" onClick={()=>downloadJson(bookmarkedImages,"oscar-issue-38-bookmarks.json")} disabled={!allBm.size}>Download bookmarks JSON</button>
+        <div>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{allBm.size} bookmarked images</div>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>all bookmarks · vote counts · who voted · category · mj links</div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+        <button className="ab" onClick={()=>downloadJson(votedImages,"oscar-issue-38-voted.json")} disabled={!votedImages.length}>Download voted JSON</button>
+        <div>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{votedImages.length} images with votes · sorted by vote count</div>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>vote counts · who voted · category · mj links</div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+        <button className="ab" onClick={()=>downloadJson(data,"oscar-issue-38-pairs.json")} disabled={!pairs.length}>Download pairs JSON</button>
         <div>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images</div>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>cleaned prompts · ref types · categories · L/R · size · mj links</div>
