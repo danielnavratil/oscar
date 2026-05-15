@@ -10,11 +10,18 @@ import { supabase } from './supabase';
 
 const ISSUE_ID = '38'; // TODO: make dynamic when supporting multiple issues
 
-// ── IMAGES ────────────────────────────────────────────────────
+export type BookmarkImage = {
+  id: string;
+  prompt?: string;
+  user_name?: string;
+  aspect?: string;
+  parent_grid?: number;
+  likes?: number;
+  enqueue_time?: string;
+};
 
-/** Upload the full JSON array of images for the issue */
-export async function uploadImages(images: any[]) {
-  const rows = images.map(img => ({
+function imageRow(img: BookmarkImage) {
+  return {
     id: img.id,
     issue_id: ISSUE_ID,
     prompt: img.prompt,
@@ -23,7 +30,14 @@ export async function uploadImages(images: any[]) {
     parent_grid: img.parent_grid,
     likes: img.likes ?? 0,
     enqueue_time: img.enqueue_time,
-  }));
+  };
+}
+
+// ── IMAGES ────────────────────────────────────────────────────
+
+/** Upload the full JSON array of images for the issue */
+export async function uploadImages(images: BookmarkImage[]) {
+  const rows = images.map(imageRow);
 
   // Upsert in batches of 500 to avoid request size limits
   for (let i = 0; i < rows.length; i += 500) {
@@ -62,10 +76,16 @@ export async function loadBookmarks(): Promise<Record<string, Set<string>>> {
   return result;
 }
 
-export async function addBookmark(imageId: string, voterName: string) {
+/** Ensure image exists in DB, then add bookmark (satisfies FK on image_id). */
+export async function addBookmark(image: BookmarkImage, voterName: string) {
+  const { error: imgError } = await supabase
+    .from('images')
+    .upsert(imageRow(image), { onConflict: 'id' });
+  if (imgError) throw imgError;
+
   const { error } = await supabase
     .from('bookmarks')
-    .insert({ image_id: imageId, voter_name: voterName, issue_id: ISSUE_ID });
+    .insert({ image_id: image.id, voter_name: voterName, issue_id: ISSUE_ID });
   if (error && error.code !== '23505') throw error; // ignore duplicate
 }
 

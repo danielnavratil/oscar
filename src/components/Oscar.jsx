@@ -156,15 +156,26 @@ export default function App() {
 
   const toggleBm = useCallback((id) => {
     if (!user) return;
+    const img = images.find(i => i.id === id);
     setBookmarks(prev => {
       const m = new Set(prev[user] || []);
       const had = m.has(id);
       if (had) m.delete(id); else m.add(id);
-      const op = had ? removeBookmark(id, user) : addBookmark(id, user);
-      op.catch(() => setBookmarks(prev));
+      let op;
+      if (had) {
+        op = removeBookmark(id, user);
+      } else if (!img) {
+        op = Promise.reject(new Error(`Image ${id} not in local state`));
+      } else {
+        op = addBookmark(img, user);
+      }
+      op.catch(err => {
+        console.error("Bookmark failed:", err);
+        setBookmarks(prev);
+      });
       return { ...prev, [user]: m };
     });
-  }, [user]);
+  }, [user, images]);
   const toggleVote = id => setVotes(p=>{const m=new Set(p[user]||[]);m.has(id)?m.delete(id):m.add(id);return {...p,[user]:m};});
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
 
