@@ -482,40 +482,37 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
     </div>
   );
 
-  // Fullscreen / tinder mode
-  if (mode==="fullscreen") {
-    const img = flatImages[fsIdx]; if (!img) return null;
-    const bm = myBm.has(img.id);
-    return (
-      <div style={{display:"flex",height:"calc(100vh - 50px)",background:"var(--bg)"}}>
+  const fsImg = flatImages[fsIdx];
+  const fsBm = fsImg && myBm.has(fsImg.id);
+
+  return (
+    <>
+    {mode==="fullscreen" && fsImg && (
+      <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",background:"var(--bg)"}}>
         <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"28px 36px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>setMode("grid")}>
-          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.max(i-1,0));}} style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>‹</button>
-          <img src={imgUrl(img)} alt="" className={`fs-img${swipeDir?` swipe-${swipeDir}`:""}`} style={{maxHeight:"calc(100vh - 120px)",maxWidth:"100%",objectFit:"contain",display:"block",cursor:"default"}} onClick={e=>e.stopPropagation()} onError={e=>e.target.style.opacity=".2"}/>
-          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.min(i+1,flatImages.length-1));}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>›</button>
+          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.max(i-1,0));}} style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>&#8249;</button>
+          <img src={imgUrl(fsImg)} alt="" className={`fs-img${swipeDir?` swipe-${swipeDir}`:""}`} style={{maxHeight:"calc(100vh - 120px)",maxWidth:"100%",objectFit:"contain",display:"block",cursor:"default"}} onClick={e=>e.stopPropagation()} onError={e=>e.target.style.opacity=".2"}/>
+          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.min(i+1,flatImages.length-1));}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>&#8250;</button>
         </div>
         <div style={{width:288,borderLeft:"1px solid var(--bd)",padding:22,display:"flex",flexDirection:"column",gap:16,overflowY:"auto",background:"var(--sf)",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{fsIdx+1} / {flatImages.length}</span>
-            <button className="pl" onClick={()=>setMode("grid")}>← grid</button>
+            <button className="pl" onClick={()=>setMode("grid")}>back to grid</button>
           </div>
           <div>
             <div style={{fontSize:9,color:"var(--tx3)",fontFamily:"'DM Mono',monospace",letterSpacing:".1em",marginBottom:8}}>PROMPT</div>
-            <p style={{fontSize:11,color:"var(--tx2)",lineHeight:1.75,fontFamily:"'DM Mono',monospace"}}>{img.prompt}</p>
+            <p style={{fontSize:11,color:"var(--tx2)",lineHeight:1.75,fontFamily:"'DM Mono',monospace"}}>{fsImg.prompt}</p>
           </div>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)"}}>@{img.user_name}</div>
-          <button className={bm?"ab":"pl"} onClick={()=>doAdvance(true)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",cursor:"pointer",width:"100%"}}>
-            {bm?"✓ bookmarked":"bookmark  [B]"}
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)"}}>@{fsImg.user_name}</div>
+          <button className={fsBm?"ab":"pl"} onClick={()=>doAdvance(true)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",cursor:"pointer",width:"100%"}}>
+            {fsBm?"bookmarked":"bookmark  [B]"}
           </button>
           <div style={{borderTop:"1px solid var(--bd)",paddingTop:14,fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",lineHeight:2.5}}>
-            Space  next<br/>B  bookmark + next<br/>⌫  undo<br/>← →  navigate<br/>Esc  grid
+            Space  next · B  bookmark + next<br/>Backspace  undo · Esc  back to grid
           </div>
         </div>
       </div>
-    );
-  }
-
-  // Grid mode
-  return (
+    )}
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 50px)",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:7,padding:"9px 18px",borderBottom:"1px solid var(--bd)",flexShrink:0,flexWrap:"wrap",background:"var(--sf2)"}}>
         <button className={`pl ${mode==="grid"?"on":""}`} onClick={()=>setMode("grid")}>grid [G]</button>
@@ -556,7 +553,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
               <MGrid images={imgs} myBm={myBm} allBm={allBm} onBm={onBm} colCount={COL_COUNTS[colSize]}
                 onFullscreen={img=>{const idx=flatImages.findIndex(i=>i.id===img.id);setFsIdx(Math.max(0,idx));setMode("fullscreen");}}/>
               {allImgs.length > ps && (
-                <button className="pl" onClick={()=>setChunkPages(p=>({...p,[chunk.key]:ps+200}))} style={{marginTop:10,width:"100%",padding:"7px 0",textAlign:"center"}}>
+                <button className="pl" onClick={()=>setChunkPages(p=>({...p,[chunk.key]:ps+400}))} style={{marginTop:10,width:"100%",padding:"7px 0",textAlign:"center"}}>
                   load more · {allImgs.length - ps} remaining
                 </button>
               )}
@@ -565,6 +562,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
         })}
       </div>
     </div>
+    </>
   );
 }
 
