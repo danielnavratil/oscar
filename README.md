@@ -33,8 +33,9 @@ npm install
 ### 2. Set up Supabase
 
 1. Create a project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** and run the contents of `supabase/schema.sql`
-3. Go to **Settings → API** and copy:
+2. Go to **SQL Editor** and run `supabase/schema.sql`
+3. **Existing DBs only:** run `supabase/migrations/20260520140000_drop_images_foreign_keys.sql`
+4. Go to **Settings → API** and copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - Anon public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 

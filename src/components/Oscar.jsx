@@ -115,6 +115,24 @@ function GlobalStyles() {
   return null;
 }
 
+/** Re-apply in-flight vote toggles after a server reload (realtime can fire before insert lands). */
+function applyPendingVoteOps(server, pending) {
+  if (!pending.size) return server;
+  const result = {};
+  for (const [voter, set] of Object.entries(server)) {
+    result[voter] = new Set(set);
+  }
+  for (const [key, op] of pending) {
+    const sep = key.indexOf(":");
+    const voter = key.slice(0, sep);
+    const imageId = key.slice(sep + 1);
+    if (!result[voter]) result[voter] = new Set();
+    if (op === "add") result[voter].add(imageId);
+    else result[voter].delete(imageId);
+  }
+  return result;
+}
+
 // ── APP ────────────────────────────────────────────────────────
 export default function App() {
   const [dark, setDark] = useState(false);
@@ -128,6 +146,7 @@ export default function App() {
   const [votingOpen, setVotingOpen] = useState(false);
   const [refTypes, setRefTypes] = useState({});
   const [tab, setTab] = useState("browse");
+  const pendingVoteOpsRef = useRef(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -170,12 +189,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let voteReloadTimer;
     const unsub = subscribeToChanges({
       onBookmarkChange: () => {
         loadBookmarks().then(setBookmarks).catch(err => console.error("Failed to reload bookmarks:", err));
       },
       onVoteChange: () => {
-        loadVotes().then(setVotes).catch(err => console.error("Failed to reload votes:", err));
+        clearTimeout(voteReloadTimer);
+        voteReloadTimer = setTimeout(() => {
+          loadVotes()
+            .then(data => setVotes(applyPendingVoteOps(data, pendingVoteOpsRef.current)))
+            .catch(err => console.error("Failed to reload votes:", err));
+        }, 400);
       },
       onCategoryChange: () => {
         loadCategories().then(setCategories).catch(err => console.error("Failed to reload categories:", err));
@@ -184,7 +209,10 @@ export default function App() {
         loadVotingState().then(setVotingOpen).catch(err => console.error("Failed to reload voting state:", err));
       },
     });
-    return unsub;
+    return () => {
+      clearTimeout(voteReloadTimer);
+      unsub();
+    };
   }, []);
 
   const myBm = bookmarks[user] || new Set();
@@ -211,12 +239,24 @@ export default function App() {
   }, [user]);
   const toggleVote = useCallback(id => {
     if (!user) return;
+    const key = `${user}:${id}`;
     setVotes(prev => {
       const m = new Set(prev[user] || []);
       const had = m.has(id);
+      const op = had ? "remove" : "add";
       if (had) m.delete(id); else m.add(id);
+      pendingVoteOpsRef.current.set(key, op);
       (had ? removeVote(id, user) : addVote(id, user))
-        .catch(err => { console.error("Vote failed:", err); setVotes(prev); });
+        .catch(err => {
+          console.error("Vote failed:", err?.message ?? err, err?.code ? { code: err.code } : "");
+          pendingVoteOpsRef.current.delete(key);
+          setVotes(p => {
+            const s = new Set(p[user] || []);
+            if (had) s.add(id); else s.delete(id);
+            return { ...p, [user]: s };
+          });
+        })
+        .finally(() => pendingVoteOpsRef.current.delete(key));
       return { ...prev, [user]: m };
     });
   }, [user]);

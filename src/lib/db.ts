@@ -9,6 +9,7 @@
 import { supabase } from './supabase';
 
 const ISSUE_ID = '38'; // TODO: make dynamic when supporting multiple issues
+// image_id fields reference IDs from issue JSON (Storage), not a Postgres images table.
 
 // ── ISSUE JSON (Storage) ──────────────────────────────────────
 

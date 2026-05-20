@@ -8,20 +8,7 @@ create table if not exists issues (
   created_at timestamptz default now()
 );
 
--- ── IMAGES ────────────────────────────────────────────────────
--- Populated by uploading the monthly JSON from the browse tab
-create table if not exists images (
-  id text primary key,          -- Midjourney UUID
-  issue_id text references issues(id) on delete cascade,
-  prompt text,
-  user_name text,
-  aspect text,
-  parent_grid integer,
-  likes integer default 0,
-  enqueue_time timestamptz,
-  inserted_at timestamptz default now()
-);
-create index if not exists images_issue_idx on images(issue_id);
+-- Image data lives in issue JSON (Storage). Tables below store image_id text only.
 
 -- ── BOOKMARKS ─────────────────────────────────────────────────
 -- image_id matches IDs in issue JSON (Storage); no FK to images table
@@ -37,22 +24,23 @@ create index if not exists bookmarks_issue_idx on bookmarks(issue_id);
 
 -- ── CATEGORIES ────────────────────────────────────────────────
 create table if not exists categories (
-  image_id text references images(id) on delete cascade primary key,
+  image_id text primary key,
   category text,
   updated_at timestamptz default now()
 );
 
 -- ── REFERENCE TYPES ───────────────────────────────────────────
 create table if not exists ref_types (
-  image_id text references images(id) on delete cascade primary key,
+  image_id text primary key,
   types text[] default '{}',
   updated_at timestamptz default now()
 );
 
 -- ── VOTES ─────────────────────────────────────────────────────
+-- image_id matches IDs in issue JSON (Storage); no FK to images table
 create table if not exists votes (
   id uuid default gen_random_uuid() primary key,
-  image_id text references images(id) on delete cascade,
+  image_id text not null,
   voter_name text not null,
   issue_id text references issues(id) on delete cascade,
   created_at timestamptz default now(),
@@ -80,8 +68,8 @@ create table if not exists voting_state (
 create table if not exists pairs (
   id text primary key,
   issue_id text references issues(id) on delete cascade,
-  image_a_id text references images(id) on delete cascade,
-  image_b_id text references images(id) on delete cascade,
+  image_a_id text not null,
+  image_b_id text not null,
   side_a text default 'L',
   size_a text default 'full bleed',
   side_b text default 'R',
@@ -105,7 +93,6 @@ alter publication supabase_realtime add table voting_state;
 -- For now: allow all authenticated and anon access.
 -- Tighten this when you add proper auth.
 alter table issues enable row level security;
-alter table images enable row level security;
 alter table bookmarks enable row level security;
 alter table categories enable row level security;
 alter table ref_types enable row level security;
@@ -115,7 +102,6 @@ alter table voting_state enable row level security;
 alter table pairs enable row level security;
 
 create policy "allow all" on issues for all using (true) with check (true);
-create policy "allow all" on images for all using (true) with check (true);
 create policy "allow all" on bookmarks for all using (true) with check (true);
 create policy "allow all" on categories for all using (true) with check (true);
 create policy "allow all" on ref_types for all using (true) with check (true);
