@@ -21,10 +21,17 @@ function isStorageNotFound(error: { message?: string; statusCode?: string | numb
   return code === 404 || code === '404' || /not found|does not exist/i.test(error.message ?? '');
 }
 
-/** Parse raw issue JSON (array or object map) into an image array. */
+/** Parse raw issue JSON (array or object map) into an image array, deduped by id. */
 export function parseIssueJson(raw: string): unknown[] {
   const d = JSON.parse(raw);
-  return Array.isArray(d) ? d : Object.values(d as Record<string, unknown>);
+  const arr: unknown[] = Array.isArray(d) ? d : Object.values(d as Record<string, unknown>);
+  const seen = new Set<unknown>();
+  return arr.filter(item => {
+    const id = (item as Record<string, unknown>).id;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 /** Upload raw JSON text to Storage (overwrites existing file). */
