@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair } from "@/lib/db";
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
@@ -185,6 +185,14 @@ export default function App() {
     loadVotingState()
       .then(data => { if (!cancelled) setVotingOpen(data); })
       .catch(err => console.error("Failed to load voting state:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadPairs()
+      .then(data => { if (!cancelled) setPairs(data); })
+      .catch(err => console.error("Failed to load pairs:", err));
     return () => { cancelled = true; };
   }, []);
 
@@ -880,7 +888,9 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     if (!pairingA) { setPairingA(img); setSuggestion(null); return; }
     if (pairingA.id===img.id) { setPairingA(null); return; }
     const type = poolMode==="all" ? "proposal" : "confirmed";
-    setPairs(p=>[...p,{id:`${Date.now()}`,a:{id:pairingA.id,side:"L",size:"full bleed"},b:{id:img.id,side:"R",size:"full bleed"},creator:user,type}]);
+    const newPair = {id:`${Date.now()}`,a:{id:pairingA.id,side:"L",size:"full bleed"},b:{id:img.id,side:"R",size:"full bleed"},creator:user,type};
+    setPairs(p=>[...p,newPair]);
+    dbCreatePair(newPair).catch(err => console.error("Failed to save pair:", err));
     setPairingA(null); setSuggestion(null);
   };
 
@@ -903,9 +913,18 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     setSuggesting(null);
   };
 
-  const upd = (pid,k,f,v) => setPairs(p=>p.map(x=>x.id===pid?{...x,[k]:{...x[k],[f]:v}}:x));
-  const del = pid => setPairs(p=>p.filter(x=>x.id!==pid));
-  const accept = pid => setPairs(p=>p.map(x=>x.id===pid?{...x,type:"confirmed"}:x));
+  const upd = (pid,k,f,v) => {
+    setPairs(p=>p.map(x=>x.id===pid?{...x,[k]:{...x[k],[f]:v}}:x));
+    dbUpdatePair(pid, { [`${f}_${k}`]: v }).catch(err => console.error("Failed to update pair:", err));
+  };
+  const del = pid => {
+    setPairs(p=>p.filter(x=>x.id!==pid));
+    dbDeletePair(pid).catch(err => console.error("Failed to delete pair:", err));
+  };
+  const accept = pid => {
+    setPairs(p=>p.map(x=>x.id===pid?{...x,type:"confirmed"}:x));
+    dbUpdatePair(pid, { type: "confirmed" }).catch(err => console.error("Failed to update pair:", err));
+  };
   const getImg = id => images.find(i=>i.id===id);
   const confirmedPairs = pairs.filter(p=>p.type==="confirmed");
   const proposals = pairs.filter(p=>p.type==="proposal");
