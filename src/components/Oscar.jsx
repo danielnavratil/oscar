@@ -981,7 +981,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
         </div>
       </div>
       {pairingA&&(
-        <div style={{position:"fixed",bottom:20,left:20,width:255,zIndex:100,borderRadius:4,overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.5)",border:"2px solid var(--tx)",outline:"3px solid rgba(255,255,255,0.25)",background:"var(--bg)"}}>
+        <div style={{position:"fixed",bottom:20,left:20,width:255,zIndex:100,borderRadius:4,overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.5)",border:"2px solid var(--tx)",outline:"3px solid #fff",background:"var(--bg)"}}>
           <div style={{position:"relative"}}>
             <img src={imgUrl(pairingA)} alt="" style={{width:"100%",display:"block"}}/>
             <button onClick={()=>setPairingA(null)} style={{position:"absolute",top:5,right:5,width:20,height:20,borderRadius:"50%",background:"rgba(0,0,0,.65)",border:"none",color:"#fff",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
