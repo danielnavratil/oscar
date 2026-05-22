@@ -148,6 +148,14 @@ function applyPendingVoteOps(server, pending) {
 export default function App() {
   const [dark, setDark] = useState(false);
   const [user, setUser] = useState(null);
+  useEffect(() => {
+    const saved = localStorage.getItem('oscar_user');
+    if (saved) setUser(saved);
+  }, []);
+  useEffect(() => {
+    if (user) localStorage.setItem('oscar_user', user);
+    else localStorage.removeItem('oscar_user');
+  }, [user]);
   const [images, setImages] = useState([]);
   const [bookmarks, setBookmarks] = useState({});
   const [categories, setCategories] = useState({});
@@ -294,8 +302,8 @@ export default function App() {
   }, []);
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
 
-  const handleUpload = e => {
-    const f = e.target.files[0]; if (!f) return;
+  const handleUpload = file => {
+    if (!file) return;
     const r = new FileReader();
     r.onload = ev => {
       try {
@@ -459,6 +467,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
   const [numChunks, setNumChunks] = useState(3);
   const [chunkFilter, setChunkFilter] = useState(null);
   const [bmFilter, setBmFilter] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [colSize, setColSize] = useState("M");
 
   const [chunkPages, setChunkPages] = useState({});
@@ -523,10 +532,15 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
   }, [mode, doAdvance, onBm]);
 
   if (images.length===0) return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"calc(100vh - 50px)",gap:18}}>
-      <div style={{width:52,height:52,border:"1px solid var(--bd)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--tx3)",fontSize:20}}>↑</div>
-      <p style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx3)",letterSpacing:".12em"}}>UPLOAD JSON TO BEGIN</p>
-      <label className="ab" style={{cursor:"pointer",padding:"10px 24px"}}>Upload JSON<input type="file" accept=".json" onChange={onUpload} style={{display:"none"}}/></label>
+    <div
+      style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"calc(100vh - 50px)",gap:18,transition:"background .15s",background:dragOver?"var(--sf)":"transparent"}}
+      onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+      onDragLeave={()=>setDragOver(false)}
+      onDrop={e=>{e.preventDefault();setDragOver(false);onUpload(e.dataTransfer.files[0]);}}
+    >
+      <div style={{width:52,height:52,border:`1px ${dragOver?"dashed":"solid"} var(--bd)`,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--tx3)",fontSize:20}}>↑</div>
+      <p style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx3)",letterSpacing:".12em"}}>{dragOver?"DROP JSON FILE":"UPLOAD JSON TO BEGIN"}</p>
+      <label className="ab" style={{cursor:"pointer",padding:"10px 24px"}}>Upload JSON<input type="file" accept=".json" onChange={e=>onUpload(e.target.files[0])} style={{display:"none"}}/></label>
     </div>
   );
 
@@ -967,7 +981,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
         </div>
       </div>
       {pairingA&&(
-        <div style={{position:"fixed",bottom:20,left:20,width:170,zIndex:100,borderRadius:4,overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.5)",border:"2px solid var(--tx)",background:"var(--bg)"}}>
+        <div style={{position:"fixed",bottom:20,left:20,width:255,zIndex:100,borderRadius:4,overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.5)",border:"2px solid var(--tx)",outline:"3px solid rgba(255,255,255,0.25)",background:"var(--bg)"}}>
           <div style={{position:"relative"}}>
             <img src={imgUrl(pairingA)} alt="" style={{width:"100%",display:"block"}}/>
             <button onClick={()=>setPairingA(null)} style={{position:"absolute",top:5,right:5,width:20,height:20,borderRadius:"50%",background:"rgba(0,0,0,.65)",border:"none",color:"#fff",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
