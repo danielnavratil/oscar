@@ -14,6 +14,7 @@ const SIZES = ["full bleed","inset small","inset large"];
 const ThemeCtx = createContext("light");
 
 const imgUrl = img => `https://cdn.midjourney.com/${img.id}/0_${img.parent_grid}_640_N.webp`;
+const COL_COUNTS = {S:10, M:7, L:5, XL:3};
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
 const toBase64 = async (url) => {
   const res = await fetch(url);
@@ -459,7 +460,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
   const [chunkFilter, setChunkFilter] = useState(null);
   const [bmFilter, setBmFilter] = useState(false);
   const [colSize, setColSize] = useState("M");
-  const COL_COUNTS = {S:10, M:7, L:5, XL:3};
+
   const [chunkPages, setChunkPages] = useState({});
   const [fsIdx, setFsIdx] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
@@ -878,6 +879,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const [pairingA, setPairingA] = useState(null);
   const [suggestion, setSuggestion] = useState(null);
   const [suggesting, setSuggesting] = useState(null);
+  const [colSize, setColSize] = useState("M");
 
   const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
   const pool = poolMode==="all" ? sortedColl : unpairedPool;
@@ -941,6 +943,11 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           {CATEGORIES.filter(c=>pool.some(i=>categories[i.id]===c)).map(c=>(
             <button key={c} className={`pl ${catFilter===c?"on":""}`} onClick={()=>setCatFilter(c)} style={{textTransform:"capitalize"}}>{c} <span style={{opacity:.4}}>{pool.filter(i=>categories[i.id]===c).length}</span></button>
           ))}
+          <div style={{marginLeft:"auto",display:"flex",gap:4}}>
+            {["S","M","L","XL"].map(s=>(
+              <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
+            ))}
+          </div>
         </div>
         {pairingA&&(
           <div style={{padding:"6px 13px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,background:"var(--sf3)"}}>
@@ -955,10 +962,19 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           </div>
         )}
         <div style={{flex:1,overflowY:"auto",padding:"12px 13px"}}>
-          <MGrid images={filteredPool} showSel showVotes selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} onSuggest={!suggesting?suggestPair:null} suggestion={suggestion?.suggestedId}/>
+          <MGrid images={filteredPool} showSel showVotes selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} onSuggest={!suggesting?suggestPair:null} suggestion={suggestion?.suggestedId} colCount={COL_COUNTS[colSize]}/>
           {!filteredPool.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:50,fontFamily:"'DM Mono',monospace"}}>no images{catFilter?" in this category":""}</div>}
         </div>
       </div>
+      {pairingA&&(
+        <div style={{position:"fixed",bottom:20,left:20,width:170,zIndex:100,borderRadius:4,overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.5)",border:"2px solid var(--tx)",background:"var(--bg)"}}>
+          <div style={{position:"relative"}}>
+            <img src={imgUrl(pairingA)} alt="" style={{width:"100%",display:"block"}}/>
+            <button onClick={()=>setPairingA(null)} style={{position:"absolute",top:5,right:5,width:20,height:20,borderRadius:"50%",background:"rgba(0,0,0,.65)",border:"none",color:"#fff",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
+          </div>
+          <div style={{padding:"5px 8px",fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>@{pairingA.user_name} · click another to pair</div>
+        </div>
+      )}
       <div style={{width:400,overflowY:"auto",padding:"13px 13px 40px",flexShrink:0}}>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",marginBottom:12}}>CONFIRMED · {confirmedPairs.length}</div>
         {!confirmedPairs.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:16,marginBottom:20}}>select from unpaired pool to pair</div>}
