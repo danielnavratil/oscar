@@ -15,6 +15,16 @@ const ThemeCtx = createContext("light");
 
 const imgUrl = img => `https://cdn.midjourney.com/${img.id}/0_${img.parent_grid}_640_N.webp`;
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
+const toBase64 = async (url) => {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ data: reader.result.split(',')[1], media_type: blob.type || 'image/webp' });
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 const selStyle = (dark) => ({ background:"transparent", border:`1px solid var(--bd)`, color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" });
 
 function aspectPad(a) {
@@ -296,17 +306,6 @@ export default function App() {
       } catch { alert("Invalid JSON"); }
     };
     r.readAsText(f);
-  };
-
-  const toBase64 = async (url) => {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve({ data: reader.result.split(',')[1], media_type: blob.type || 'image/webp' });
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
   };
 
   const CATEGORIZE_PROMPT = `You are categorizing Midjourney AI images for a print magazine.
@@ -865,7 +864,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"16px 18px 40px"}}>
-        <MGrid images={filtered} myBm={myBm} allBm={allBm} myVotes={myVotes} voteCount={voteCount} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
+        <MGrid images={filtered} myBm={myBm} allBm={allBm} myVotes={myVotes} voteCount={showOthers?voteCount:undefined} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
       </div>
     </div>
     </>
@@ -898,11 +897,12 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     setSuggesting(img.id); setSuggestion(null);
     const candidates = filteredPool.filter(i=>i.id!==img.id).slice(0,20);
     try {
+      const { data: imgData, media_type } = await toBase64(imgUrl(img));
       const res = await fetch("/api/claude", {
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:120,
           messages:[{role:"user",content:[
-            {type:"image",source:{type:"url",url:imgUrl(img)}},
+            {type:"image",source:{type:"base64",media_type,data:imgData}},
             {type:"text",text:`You're helping pair images for a print magazine spread. This is image A.\nCandidates:\n${candidates.map(c=>`ID: ${c.id}\nPrompt: "${c.prompt.substring(0,120)}"`).join("\n---\n")}\nWhich candidate makes the best magazine spread pair with image A? Consider visual harmony, tonal balance, thematic complementarity. Reply with ONLY the UUID.`}
           ]}]})
       });
