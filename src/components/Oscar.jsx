@@ -955,7 +955,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           </div>
         )}
         <div style={{flex:1,overflowY:"auto",padding:"12px 13px"}}>
-          <MGrid images={filteredPool} showSel selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} onSuggest={!suggesting?suggestPair:null} suggestion={suggestion?.suggestedId}/>
+          <MGrid images={filteredPool} showSel showVotes selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} onSuggest={!suggesting?suggestPair:null} suggestion={suggestion?.suggestedId}/>
           {!filteredPool.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:50,fontFamily:"'DM Mono',monospace"}}>no images{catFilter?" in this category":""}</div>}
         </div>
       </div>
