@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody } from "@/lib/db";
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
@@ -57,6 +57,35 @@ function cleanPrompt(prompt, refTypeList) {
   const refLine = refTypeList?.length ? refTypeList.map(t=>`[${t}]`).join(" ") : "";
   return [p,refLine,paramLine].filter(Boolean).join("\n");
 }
+
+function mechClean(rawPrompt) {
+  let p = (rawPrompt || "").replace(/https?:\/\/\S+/g, "").trim();
+  const paramIdx = p.indexOf(' --');
+  const bodyRaw = (paramIdx >= 0 ? p.slice(0, paramIdx) : p).trim();
+  const paramPart = paramIdx >= 0 ? p.slice(paramIdx).trim() : "";
+  const params = [];
+  paramPart.replace(/(--[\w.-]+(?:\s+(?!--)\S+)*)/g, m => { params.push(m.trim()); return ""; });
+  const vParam = params.find(x => x.startsWith("--v"));
+  const rest = params.filter(x => !x.startsWith("--v"));
+  const paramLine = [vParam, ...rest].filter(Boolean).join(" ");
+  let body = bodyRaw.toLowerCase();
+  body = body.replace(/\.\.\./g, "\x00").replace(/\.\./g, ".").replace(/\x00/g, "...");
+  body = body.replace(/\s+/g, " ").trim();
+  body = body.replace(/^[\s,]+|[\s,]+$/g, "").trim();
+  return { body, params: paramLine };
+}
+
+const COPY_EDIT_SYSTEM = `Copy-edit a Midjourney prompt body for a print magazine. The text is already lowercased and mechanically cleaned.
+
+Apply:
+1. Fix spelling errors
+2. Remove redundant or repeated words/concepts
+3. Any named artist, brand, franchise, or film that lacks an attribution prefix — add "in the style of" or "inspired by", whichever reads more naturally. Camera brands (Canon, Nikon, Hasselblad, Sony, Leica, Fujifilm, Kodak) are exempt.
+4. Preserve lowercase throughout — no capitalisation of any kind, including proper nouns, brand names, "3d", "ai", etc.
+
+Return ONLY valid JSON, no other text:
+{"body":"...","flagged":false,"flag_reason":null}
+Set flagged:true if uncertain about a change or if the prompt warrants human review.`;
 
 // ── GLOBAL STYLES ──────────────────────────────────────────────
 function GlobalStyles() {
@@ -164,8 +193,15 @@ export default function App() {
   const [pairs, setPairs] = useState([]);
   const [votingOpen, setVotingOpen] = useState(false);
   const [refTypes, setRefTypes] = useState({});
-  const [tab, setTab] = useState("browse");
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem('oscar_tab') || "browse"; } catch { return "browse"; }
+  });
   const pendingVoteOpsRef = useRef(new Map());
+  const [promptEdits, setPromptEdits] = useState({});
+  const [promptEditsLoaded, setPromptEditsLoaded] = useState(false);
+  const processingPromptsRef = useRef(new Set());
+  const promptEditsRef = useRef({});
+  const hasProcessedInitialRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,6 +252,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    loadPromptEdits()
+      .then(edits => { setPromptEdits(edits); promptEditsRef.current = edits; setPromptEditsLoaded(true); })
+      .catch(err => console.error("Failed to load prompt edits:", err));
+  }, []);
+
+  useEffect(() => { promptEditsRef.current = promptEdits; }, [promptEdits]);
+  useEffect(() => {
+    try { localStorage.setItem('oscar_tab', tab); } catch {}
+  }, [tab]);
+
+  useEffect(() => {
+    if (!promptEditsLoaded || !images.length) return;
+    const allBmIds = [...new Set(Object.values(bookmarks).flatMap(s => [...s]))];
+    if (!allBmIds.length || hasProcessedInitialRef.current) return;
+    hasProcessedInitialRef.current = true;
+    const unprocessed = allBmIds.filter(id => !promptEditsRef.current[id]);
+    const BATCH = 5;
+    for (let i = 0; i < unprocessed.length; i += BATCH) {
+      const delay = Math.floor(i / BATCH) * 2000;
+      setTimeout(() => {
+        unprocessed.slice(i, i + BATCH).forEach(id => {
+          const img = images.find(img => img.id === id);
+          if (img) processImagePrompt(img);
+        });
+      }, delay);
+    }
+  }, [promptEditsLoaded, images, bookmarks]);
+
+  useEffect(() => {
     let voteReloadTimer;
     const unsub = subscribeToChanges({
       onBookmarkChange: () => {
@@ -261,9 +326,13 @@ export default function App() {
         console.error("Bookmark failed:", err);
         setBookmarks(prev);
       });
+      if (!had) {
+        const img = images.find(i => i.id === id);
+        if (img) processImagePrompt(img);
+      }
       return { ...prev, [user]: m };
     });
-  }, [user]);
+  }, [user, images, processImagePrompt]);
   const toggleVote = useCallback(id => {
     if (!user) return;
     const key = `${user}:${id}`;
@@ -301,6 +370,43 @@ export default function App() {
     });
   }, []);
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
+
+  const processImagePrompt = useCallback(async (img) => {
+    if (promptEditsRef.current[img.id] || processingPromptsRef.current.has(img.id)) return;
+    processingPromptsRef.current.add(img.id);
+    try {
+      const { body: mechBody, params } = mechClean(img.prompt);
+      if (!mechBody) return;
+      const res = await fetch("/api/claude", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 400,
+          system: COPY_EDIT_SYSTEM,
+          messages: [{ role: "user", content: mechBody }]
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) { console.error('[copy-edit] Claude error', data); return; }
+      const text = (data.content?.[0]?.text || "").trim();
+      let claudeBody = mechBody, flagged = false, flagReason = null;
+      try {
+        const parsed = JSON.parse(text);
+        claudeBody = (parsed.body || mechBody).toLowerCase().trim();
+        flagged = !!parsed.flagged;
+        flagReason = parsed.flag_reason || null;
+      } catch { claudeBody = text.toLowerCase().trim(); }
+      const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason };
+      await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
+      setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
+    } catch (e) { console.error('[copy-edit] error', e); }
+    finally { processingPromptsRef.current.delete(img.id); }
+  }, []);
+
+  const updateEditedBody = useCallback(async (imageId, editedBody) => {
+    setPromptEdits(prev => ({ ...prev, [imageId]: { ...prev[imageId], editedBody } }));
+    dbUpdatePromptEditBody(imageId, editedBody).catch(e => console.error('[updateEditedBody]', e));
+  }, []);
 
   const handleUpload = file => {
     if (!file) return;
@@ -407,7 +513,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user}/>}
-          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes}/>}
+          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody}/>}
         </main>
       </div>
     </ThemeCtx.Provider>
@@ -933,6 +1039,13 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     setPairs(p=>p.map(x=>x.id===pid?{...x,[k]:{...x[k],[f]:v}}:x));
     dbUpdatePair(pid, { [`${f}_${k}`]: v }).catch(err => console.error("Failed to update pair:", err));
   };
+  const swapPair = pid => {
+    const pair = pairs.find(p=>p.id===pid);
+    if (!pair) return;
+    setPairs(p=>p.map(x=>x.id===pid?{...x,a:{id:x.b.id,side:"L",size:x.b.size},b:{id:x.a.id,side:"R",size:x.a.size}}:x));
+    dbUpdatePair(pid,{image_a_id:pair.b.id,side_a:"L",size_a:pair.b.size,image_b_id:pair.a.id,side_b:"R",size_b:pair.a.size})
+      .catch(err=>console.error("Failed to swap pair:",err));
+  };
   const del = pid => {
     setPairs(p=>p.filter(x=>x.id!==pid));
     dbDeletePair(pid).catch(err => console.error("Failed to delete pair:", err));
@@ -942,7 +1055,12 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     dbUpdatePair(pid, { type: "confirmed" }).catch(err => console.error("Failed to update pair:", err));
   };
   const getImg = id => images.find(i=>i.id===id);
-  const confirmedPairs = pairs.filter(p=>p.type==="confirmed");
+  const confirmedPairs = pairs
+    .filter(p=>p.type==="confirmed")
+    .sort((a,b)=>{
+      const rank = id => { const i = CATEGORIES.indexOf(categories[id]); return i===-1 ? Infinity : i; };
+      return rank(a.a.id) - rank(b.a.id);
+    });
   const proposals = pairs.filter(p=>p.type==="proposal");
 
   return (
@@ -992,7 +1110,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
       <div style={{width:400,overflowY:"auto",padding:"13px 13px 40px",flexShrink:0}}>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",marginBottom:12}}>CONFIRMED · {confirmedPairs.length}</div>
         {!confirmedPairs.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:16,marginBottom:20}}>select from unpaired pool to pair</div>}
-        {confirmedPairs.map((pair,i)=><PairCard key={pair.id} pair={pair} i={i} getImg={getImg} upd={upd} del={del} categories={categories}/>)}
+        {confirmedPairs.map((pair,i)=><PairCard key={pair.id} pair={pair} i={i} getImg={getImg} upd={upd} del={del} onSwap={swapPair} categories={categories}/>)}
         {proposals.length>0&&(
           <>
             <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",margin:"20px 0 10px"}}>PROPOSALS · {proposals.length}</div>
@@ -1005,7 +1123,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
                   <button className="ab" style={{padding:"3px 10px",fontSize:9}} onClick={()=>accept(pair.id)}>accept</button>
                   <button className="pl" style={{padding:"3px 8px"}} onClick={()=>del(pair.id)}>dismiss</button>
                 </div>
-                <PairCard pair={pair} i={i} getImg={getImg} upd={upd} del={null} categories={categories} dim/>
+                <PairCard pair={pair} i={i} getImg={getImg} upd={upd} del={null} onSwap={null} categories={categories} dim/>
               </div>
             ))}
           </>
@@ -1015,10 +1133,12 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   );
 }
 
-function PairCard({ pair, i, getImg, upd, del, categories, dim }) {
+function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
   const iA=getImg(pair.a.id), iB=getImg(pair.b.id);
+  const [drag, setDrag] = useState(null); // {key, startX, x}
   if (!iA||!iB) return null;
   const ss = { background:"var(--sf)", border:"1px solid var(--bd)", color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" };
+  const THRESH = 48;
   return (
     <div className="pc" style={{opacity:dim?.8:1}}>
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
@@ -1028,24 +1148,95 @@ function PairCard({ pair, i, getImg, upd, del, categories, dim }) {
         {del&&<button onClick={()=>del(pair.id)} style={{background:"none",border:"none",color:"var(--tx3)",cursor:"pointer",fontSize:15,lineHeight:1,padding:0}}>×</button>}
       </div>
       <div style={{display:"flex",gap:7}}>
-        {[["a",iA],["b",iB]].map(([k,img])=>(
-          <div key={k} style={{flex:1}}>
-            <div style={{position:"relative",paddingBottom:aspectPad(img.aspect),background:"var(--sf2)",marginBottom:5,overflow:"hidden"}}>
-              <img src={imgUrl(img)} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} loading="lazy"/>
+        {[["a",iA],["b",iB]].map(([k,img])=>{
+          const isDragging = drag?.key === k;
+          const dx = isDragging ? drag.x - drag.startX : 0;
+          // "a" (left slot) swaps when dragged right; "b" (right slot) swaps when dragged left
+          const willSwap = isDragging && (k==="a" ? dx > THRESH : dx < -THRESH);
+          const clampedDx = Math.sign(dx) * Math.min(Math.abs(dx) * 0.35, 22);
+          return (
+            <div key={k} style={{flex:1}}>
+              <div
+                style={{
+                  position:"relative",paddingBottom:aspectPad(img.aspect),background:"var(--sf2)",marginBottom:5,overflow:"hidden",
+                  cursor:dim||!onSwap?"default":"ew-resize",userSelect:"none",touchAction:"none",
+                  transform:isDragging?`translateX(${clampedDx}px)`:"none",
+                  transition:isDragging?"none":"transform .15s ease",
+                  zIndex:isDragging?2:1,
+                }}
+                onPointerDown={dim||!onSwap?undefined:e=>{e.currentTarget.setPointerCapture(e.pointerId);setDrag({key:k,startX:e.clientX,x:e.clientX});}}
+                onPointerMove={e=>{if(!isDragging)return;setDrag(p=>({...p,x:e.clientX}));}}
+                onPointerUp={e=>{if(!isDragging)return;if(willSwap)onSwap(pair.id);setDrag(null);}}
+                onPointerCancel={()=>{if(isDragging)setDrag(null);}}
+              >
+                <img src={imgUrl(img)} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} loading="lazy"/>
+                {isDragging&&Math.abs(dx)>8&&(
+                  <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.45)",pointerEvents:"none"}}>
+                    <span style={{fontSize:18,color:willSwap?"#fff":"rgba(255,255,255,.35)",transition:"color .1s"}}>⇄</span>
+                  </div>
+                )}
+              </div>
+              <select value={pair[k].size} onChange={e=>upd(pair.id,k,"size",e.target.value)} style={{...ss,width:"100%",fontSize:8}}>{SIZES.map(s=><option key={s} value={s}>{s}</option>)}</select>
             </div>
-            <div style={{display:"flex",gap:3}}>
-              <select value={pair[k].side} onChange={e=>upd(pair.id,k,"side",e.target.value)} style={ss}><option value="L">L</option><option value="R">R</option></select>
-              <select value={pair[k].size} onChange={e=>upd(pair.id,k,"size",e.target.value)} style={{...ss,flex:1,fontSize:8}}>{SIZES.map(s=><option key={s} value={s}>{s}</option>)}</select>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
+// ── PROMPT CELL ────────────────────────────────────────────────
+function PromptCell({ imageId, promptEdits, onSave }) {
+  const edit = promptEdits?.[imageId];
+  const effective = edit ? (edit.editedBody ?? edit.claudeBody) : null;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const startEdit = () => { setDraft(effective || ""); setEditing(true); };
+  const commitEdit = () => { setEditing(false); if (draft !== effective) onSave(imageId, draft); };
+  const cancelEdit = () => { setEditing(false); };
+
+  if (!effective) return (
+    <div style={{fontSize:9,color:"var(--tx3)",fontFamily:"'DM Mono',monospace",fontStyle:"italic"}}>processing…</div>
+  );
+
+  if (editing) return (
+    <div>
+      <textarea
+        autoFocus
+        value={draft}
+        onChange={e=>setDraft(e.target.value)}
+        onKeyDown={e=>{if(e.key==="Escape")cancelEdit();}}
+        style={{width:"100%",fontSize:9,color:"var(--tx)",fontFamily:"'DM Mono',monospace",background:"var(--sf2)",border:"1px solid var(--bd2)",padding:"4px 6px",resize:"vertical",outline:"none",minHeight:64,lineHeight:1.75,boxSizing:"border-box",display:"block"}}
+      />
+      <div style={{display:"flex",gap:6,marginTop:5}}>
+        <button className="ab" onClick={commitEdit} style={{padding:"3px 10px",fontSize:9}}>save</button>
+        <button className="pl" onClick={cancelEdit} style={{padding:"3px 8px",fontSize:9}}>cancel</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div onDoubleClick={startEdit} style={{cursor:"text",position:"relative"}}>
+      {edit.flagged && (
+        <div style={{position:"absolute",top:0,right:0,width:8,height:8,background:"#d97706",cursor:"default",flexShrink:0}} title={edit.flagReason||"flagged for review"}/>
+      )}
+      <div style={{
+        fontSize:9,
+        color:"var(--tx2)",
+        fontFamily:"'DM Mono',monospace",lineHeight:1.75,
+        display:"-webkit-box",WebkitLineClamp:6,WebkitBoxOrient:"vertical",overflow:"hidden",
+        paddingRight: edit.flagged ? 14 : 0,
+      }}>
+        {effective}
+      </div>
+      {edit.params&&<div style={{fontSize:8,color:"var(--tx3)",marginTop:3,fontFamily:"'DM Mono',monospace"}}>{edit.params}</div>}
+    </div>
+  );
+}
+
 // ── EXPORT TAB ─────────────────────────────────────────────────
-function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes }) {
+function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave }) {
   const getImg = id => images.find(i=>i.id===id);
   const vc = id => Object.values(votes).filter(s=>s.has(id)).length;
 
@@ -1071,10 +1262,20 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes }) {
     .sort((a,b)=>b.votes-a.votes);
   const votedImages = bookmarkedImages.filter(i=>i.votes>0);
 
-  const data = pairs.map((p,i)=>{
+  const getCleanedPrompt = (img) => {
+    const edit = promptEdits?.[img.id];
+    if (edit) {
+      const body = edit.editedBody ?? edit.claudeBody;
+      return edit.params ? `${body}\n${edit.params}` : body;
+    }
+    return cleanPrompt(img.prompt, refTypes[img.id]);
+  };
+
+  const pairData = pairs.map((p,i)=>{
     const fmt = (img,side,size) => img ? {
       id:img.id, username:img.user_name,
-      cleanedPrompt:cleanPrompt(img.prompt,refTypes[img.id]),
+      thumbnailUrl:imgUrl(img), aspect:img.aspect,
+      cleanedPrompt:getCleanedPrompt(img),
       rawPrompt:img.prompt,
       category:categories[img.id],
       referenceTypes:refTypes[img.id]||[],
@@ -1086,47 +1287,68 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes }) {
     return { pair:i+1, imageA:fmt(iA,p.a.side,p.a.size), imageB:fmt(iB,p.b.side,p.b.size) };
   });
 
+  const allPairIds = pairs.flatMap(p=>[p.a.id,p.b.id]);
+  const processedCount = allPairIds.filter(id=>promptEdits?.[id]).length;
+  const flaggedCount = allPairIds.filter(id=>promptEdits?.[id]?.flagged).length;
+
   return (
-    <div style={{padding:"28px",maxWidth:860}}>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
-      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-        <button className="ab" onClick={()=>downloadJson(bookmarkedImages,"oscar-issue-38-bookmarks.json")} disabled={!allBm.size}>Download bookmarks JSON</button>
-        <div>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{allBm.size} bookmarked images</div>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>all bookmarks · vote counts · who voted · category · mj links</div>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-        <button className="ab" onClick={()=>downloadJson(votedImages,"oscar-issue-38-voted.json")} disabled={!votedImages.length}>Download voted JSON</button>
-        <div>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{votedImages.length} images with votes · sorted by vote count</div>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>vote counts · who voted · category · mj links</div>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-        <button className="ab" onClick={()=>downloadJson(data,"oscar-issue-38-pairs.json")} disabled={!pairs.length}>Download pairs JSON</button>
-        <div>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images</div>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>cleaned prompts · ref types · categories · L/R · size · mj links</div>
-        </div>
-      </div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginBottom:14,letterSpacing:".08em"}}>PHASE 2: JPEG BATCH EXPORT · QR CODES · INDESIGN HANDOFF</div>
-      <div style={{display:"flex",flexDirection:"column",gap:7}}>
-        {data.slice(0,8).map(p=>(
-          <div key={p.pair} style={{display:"flex",gap:12,padding:"10px 14px",background:"var(--sf)",border:"1px solid var(--bd)",alignItems:"flex-start"}}>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",minWidth:44,paddingTop:2}}>pair {p.pair}</span>
-            {[p.imageA,p.imageB].map((img,idx)=>img&&(
-              <div key={idx} style={{flex:1}}>
-                <div style={{fontSize:9,color:"var(--tx)",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",marginBottom:2}}>{img.side} · {img.size}</div>
-                <div style={{fontSize:9,color:"var(--tx2)",fontFamily:"'DM Mono',monospace"}}>@{img.username}</div>
-                <div style={{fontSize:8,color:"var(--tx3)",marginTop:1,textTransform:"capitalize"}}>{img.category||"—"}</div>
-                {img.referenceTypes.length>0&&<div style={{fontSize:8,color:"var(--tx2)",marginTop:1}}>{img.referenceTypes.join(", ")}</div>}
-              </div>
-            ))}
+    <div style={{padding:"28px 32px",overflowY:"auto",height:"calc(100vh - 50px)"}}>
+      <div style={{maxWidth:860}}>
+        <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
+        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+          <button className="ab" onClick={()=>downloadJson(bookmarkedImages,"oscar-issue-38-bookmarks.json")} disabled={!allBm.size}>Download bookmarks JSON</button>
+          <div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{allBm.size} bookmarked images</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>all bookmarks · vote counts · who voted · category · mj links</div>
           </div>
-        ))}
-        {data.length>8&&<div style={{fontSize:9,color:"var(--tx3)",fontFamily:"'DM Mono',monospace",textAlign:"center",padding:"4px 0"}}>+ {data.length-8} more pairs</div>}
-        {!data.length&&<div style={{fontSize:11,color:"var(--tx3)",textAlign:"center",padding:"40px 0"}}>create confirmed pairs first</div>}
+        </div>
+        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+          <button className="ab" onClick={()=>downloadJson(votedImages,"oscar-issue-38-voted.json")} disabled={!votedImages.length}>Download voted JSON</button>
+          <div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{votedImages.length} images with votes · sorted by vote count</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>vote counts · who voted · category · mj links</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:28,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+          <button className="ab" onClick={()=>downloadJson(pairData,"oscar-issue-38-pairs.json")} disabled={!pairs.length}>Download pairs JSON</button>
+          <div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>cleaned prompts · ref types · categories · L/R · size · mj links</div>
+          </div>
+        </div>
+
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".08em"}}>PAIRS · {pairs.length}</span>
+          {pairs.length>0&&processedCount<pairs.length*2&&(
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{processedCount}/{pairs.length*2} prompts ready</span>
+          )}
+          {flaggedCount>0&&(
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>· {flaggedCount} flagged</span>
+          )}
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {pairData.map(p=>(
+            <div key={p.pair} style={{padding:"14px 16px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:12}}>pair {p.pair}</div>
+              <div style={{display:"flex",gap:24}}>
+                {[p.imageA,p.imageB].map((img,idx)=>img&&(
+                  <div key={idx} style={{width:200,flexShrink:0}}>
+                    <img src={img.thumbnailUrl} alt="" loading="lazy"
+                      style={{width:200,height:"auto",display:"block"}}
+                      onError={e=>e.target.style.opacity=".2"}/>
+                    <div style={{height:15}}/>
+                    <div style={{fontSize:9,color:"var(--tx)",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",marginBottom:2}}>{img.side} · {img.size}</div>
+                    <div style={{fontSize:9,color:"var(--tx2)",fontFamily:"'DM Mono',monospace"}}>@{img.username}</div>
+                    <div style={{fontSize:8,color:"var(--tx3)",marginTop:1,textTransform:"capitalize",marginBottom:8}}>{img.category||"—"}</div>
+                    <PromptCell imageId={img.id} promptEdits={promptEdits} onSave={onEditSave}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {!pairData.length&&<div style={{fontSize:11,color:"var(--tx3)",textAlign:"center",padding:"40px 0"}}>create confirmed pairs first</div>}
+        </div>
       </div>
     </div>
   );

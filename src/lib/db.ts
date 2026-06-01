@@ -257,8 +257,8 @@ export async function createPair(pair: {
 }
 
 export async function updatePair(pairId: string, updates: {
-  side_a?: string; size_a?: string;
-  side_b?: string; size_b?: string;
+  image_a_id?: string; side_a?: string; size_a?: string;
+  image_b_id?: string; side_b?: string; size_b?: string;
   type?: string;
 }) {
   const { error } = await supabase
@@ -273,6 +273,61 @@ export async function deletePair(pairId: string) {
     .from('pairs')
     .delete()
     .eq('id', pairId);
+  if (error) throw error;
+}
+
+// ── PROMPT EDITS ─────────────────────────────────────────────
+
+export type PromptEdit = {
+  imageId: string;
+  claudeBody: string;
+  editedBody: string | null;
+  params: string;
+  flagged: boolean;
+  flagReason: string | null;
+};
+
+export async function loadPromptEdits(): Promise<Record<string, PromptEdit>> {
+  const { data, error } = await supabase
+    .from('prompt_edits')
+    .select('image_id, claude_body, edited_body, params, flagged, flag_reason')
+    .eq('issue_id', ISSUE_ID);
+  if (error) throw error;
+  return Object.fromEntries(
+    (data ?? []).map(r => [r.image_id, {
+      imageId: r.image_id,
+      claudeBody: r.claude_body,
+      editedBody: r.edited_body ?? null,
+      params: r.params ?? '',
+      flagged: r.flagged ?? false,
+      flagReason: r.flag_reason ?? null,
+    }])
+  );
+}
+
+export async function upsertPromptEdit(edit: PromptEdit & { rawPrompt: string }) {
+  const { error } = await supabase
+    .from('prompt_edits')
+    .upsert({
+      image_id: edit.imageId,
+      issue_id: ISSUE_ID,
+      raw_prompt: edit.rawPrompt,
+      claude_body: edit.claudeBody,
+      edited_body: edit.editedBody,
+      params: edit.params,
+      flagged: edit.flagged,
+      flag_reason: edit.flagReason,
+      updated_at: new Date().toISOString(),
+    });
+  if (error) throw error;
+}
+
+export async function updatePromptEditBody(imageId: string, editedBody: string) {
+  const { error } = await supabase
+    .from('prompt_edits')
+    .update({ edited_body: editedBody, updated_at: new Date().toISOString() })
+    .eq('image_id', imageId)
+    .eq('issue_id', ISSUE_ID);
   if (error) throw error;
 }
 
