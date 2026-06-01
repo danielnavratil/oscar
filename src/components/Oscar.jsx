@@ -194,6 +194,7 @@ export default function App() {
   const [votingOpen, setVotingOpen] = useState(false);
   const [refTypes, setRefTypes] = useState({});
   const [tab, setTab] = useState(() => {
+    if (typeof window === 'undefined') return "browse";
     try { return localStorage.getItem('oscar_tab') || "browse"; } catch { return "browse"; }
   });
   const pendingVoteOpsRef = useRef(new Map());
@@ -1140,7 +1141,7 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
   const ss = { background:"var(--sf)", border:"1px solid var(--bd)", color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" };
   const THRESH = 48;
   return (
-    <div className="pc" style={{opacity:dim?.8:1}}>
+    <div className="pc" style={{opacity:dim ? 0.8 : 1}}>
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>PAIR {i+1}</span>
         {categories[pair.a.id]&&<span style={{fontSize:8,color:"var(--tx2)",textTransform:"capitalize"}}>{categories[pair.a.id]}</span>}
