@@ -316,6 +316,38 @@ export default function App() {
   const proposals = pairs.filter(p=>p.type==="proposal");
   const confirmedPairedIds = new Set(confirmedPairs.flatMap(p=>[p.a.id,p.b.id]));
 
+  const processImagePrompt = useCallback(async (img) => {
+    if (promptEditsRef.current[img.id] || processingPromptsRef.current.has(img.id)) return;
+    processingPromptsRef.current.add(img.id);
+    try {
+      const { body: mechBody, params } = mechClean(img.prompt);
+      if (!mechBody) return;
+      const res = await fetch("/api/claude", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 400,
+          system: COPY_EDIT_SYSTEM,
+          messages: [{ role: "user", content: mechBody }]
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) { console.error('[copy-edit] Claude error', data); return; }
+      const text = (data.content?.[0]?.text || "").trim();
+      let claudeBody = mechBody, flagged = false, flagReason = null;
+      try {
+        const parsed = JSON.parse(text);
+        claudeBody = (parsed.body || mechBody).toLowerCase().trim();
+        flagged = !!parsed.flagged;
+        flagReason = parsed.flag_reason || null;
+      } catch { claudeBody = text.toLowerCase().trim(); }
+      const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason };
+      await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
+      setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
+    } catch (e) { console.error('[copy-edit] error', e); }
+    finally { processingPromptsRef.current.delete(img.id); }
+  }, []);
+
   const toggleBm = useCallback((id) => {
     if (!user) return;
     setBookmarks(prev => {
@@ -371,38 +403,6 @@ export default function App() {
     });
   }, []);
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
-
-  const processImagePrompt = useCallback(async (img) => {
-    if (promptEditsRef.current[img.id] || processingPromptsRef.current.has(img.id)) return;
-    processingPromptsRef.current.add(img.id);
-    try {
-      const { body: mechBody, params } = mechClean(img.prompt);
-      if (!mechBody) return;
-      const res = await fetch("/api/claude", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 400,
-          system: COPY_EDIT_SYSTEM,
-          messages: [{ role: "user", content: mechBody }]
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) { console.error('[copy-edit] Claude error', data); return; }
-      const text = (data.content?.[0]?.text || "").trim();
-      let claudeBody = mechBody, flagged = false, flagReason = null;
-      try {
-        const parsed = JSON.parse(text);
-        claudeBody = (parsed.body || mechBody).toLowerCase().trim();
-        flagged = !!parsed.flagged;
-        flagReason = parsed.flag_reason || null;
-      } catch { claudeBody = text.toLowerCase().trim(); }
-      const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason };
-      await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
-      setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
-    } catch (e) { console.error('[copy-edit] error', e); }
-    finally { processingPromptsRef.current.delete(img.id); }
-  }, []);
 
   const updateEditedBody = useCallback(async (imageId, editedBody) => {
     setPromptEdits(prev => ({ ...prev, [imageId]: { ...prev[imageId], editedBody } }));
