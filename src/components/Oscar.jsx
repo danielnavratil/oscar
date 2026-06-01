@@ -1137,6 +1137,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
 function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
   const iA=getImg(pair.a.id), iB=getImg(pair.b.id);
   const [drag, setDrag] = useState(null); // {key, startX, x}
+  const dragRef = useRef(null);
   if (!iA||!iB) return null;
   const ss = { background:"var(--sf)", border:"1px solid var(--bd)", color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" };
   const THRESH = 48;
@@ -1152,7 +1153,6 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
         {[["a",iA],["b",iB]].map(([k,img])=>{
           const isDragging = drag?.key === k;
           const dx = isDragging ? drag.x - drag.startX : 0;
-          // "a" (left slot) swaps when dragged right; "b" (right slot) swaps when dragged left
           const willSwap = isDragging && (k==="a" ? dx > THRESH : dx < -THRESH);
           const clampedDx = Math.sign(dx) * Math.min(Math.abs(dx) * 0.35, 22);
           return (
@@ -1160,15 +1160,31 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
               <div
                 style={{
                   position:"relative",paddingBottom:aspectPad(img.aspect),background:"var(--sf2)",marginBottom:5,overflow:"hidden",
-                  cursor:dim||!onSwap?"default":"ew-resize",userSelect:"none",touchAction:"none",
+                  cursor:dim||!onSwap?"default":isDragging?"grabbing":"grab",userSelect:"none",touchAction:"none",
                   transform:isDragging?`translateX(${clampedDx}px)`:"none",
                   transition:isDragging?"none":"transform .15s ease",
                   zIndex:isDragging?2:1,
                 }}
-                onPointerDown={dim||!onSwap?undefined:e=>{e.currentTarget.setPointerCapture(e.pointerId);setDrag({key:k,startX:e.clientX,x:e.clientX});}}
-                onPointerMove={e=>{if(!isDragging)return;setDrag(p=>({...p,x:e.clientX}));}}
-                onPointerUp={e=>{if(!isDragging)return;if(willSwap)onSwap(pair.id);setDrag(null);}}
-                onPointerCancel={()=>{if(isDragging)setDrag(null);}}
+                onPointerDown={dim||!onSwap?undefined:e=>{
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  const d = {key:k, startX:e.clientX, x:e.clientX};
+                  dragRef.current = d;
+                  setDrag(d);
+                }}
+                onPointerMove={e=>{
+                  if(dragRef.current?.key!==k) return;
+                  const d = {...dragRef.current, x:e.clientX};
+                  dragRef.current = d;
+                  setDrag({...d});
+                }}
+                onPointerUp={e=>{
+                  if(!dragRef.current||dragRef.current.key!==k) return;
+                  const ddx = dragRef.current.x - dragRef.current.startX;
+                  if(k==="a" ? ddx > THRESH : ddx < -THRESH) onSwap(pair.id);
+                  dragRef.current = null;
+                  setDrag(null);
+                }}
+                onPointerCancel={()=>{dragRef.current=null;setDrag(null);}}
               >
                 <img src={imgUrl(img)} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} loading="lazy"/>
                 {isDragging&&Math.abs(dx)>8&&(
