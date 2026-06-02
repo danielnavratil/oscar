@@ -412,18 +412,14 @@ export default function App() {
   }, []);
 
   const reprocessAllPrompts = useCallback(async () => {
-    await dbClearPromptEdits().catch(err => console.error('[reprocess] clear failed:', err));
-    setPromptEdits({});
-    promptEditsRef.current = {};
-    processingPromptsRef.current.clear();
-    const allBmIds = [...new Set(Object.values(bookmarks).flatMap(s => [...s]))];
-    const toProcess = allBmIds.map(id => images.find(i => i.id === id)).filter(Boolean);
-    const BATCH = 5;
-    for (let i = 0; i < toProcess.length; i += BATCH) {
-      const delay = Math.floor(i / BATCH) * 2000;
-      setTimeout(() => { toProcess.slice(i, i + BATCH).forEach(img => processImagePrompt(img)); }, delay);
+    try {
+      await dbClearPromptEdits();
+      window.location.reload();
+    } catch(err) {
+      console.error('[reprocess] failed:', err);
+      alert('Failed to clear prompts: ' + (err?.message || err));
     }
-  }, [bookmarks, images, processImagePrompt]);
+  }, []);
 
   const handleUpload = file => {
     if (!file) return;
