@@ -1152,17 +1152,22 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
       <div style={{display:"flex",gap:7}}>
         {[["a",iA],["b",iB]].map(([k,img])=>{
           const isDragging = drag?.key === k;
-          const dx = isDragging ? drag.x - drag.startX : 0;
+          const rawDx = drag ? drag.x - drag.startX : 0;
+          const dx = isDragging ? rawDx : 0;
           const willSwap = isDragging && (k==="a" ? dx > THRESH : dx < -THRESH);
-          const clampedDx = Math.sign(dx) * Math.min(Math.abs(dx) * 0.35, 22);
+          // dragged image follows cursor; non-dragged image slides opposite to make room
+          const thisDx = isDragging
+            ? Math.sign(dx) * Math.min(Math.abs(dx), 90)
+            : drag ? -rawDx * 0.18 : 0;
+          const isActive = isDragging || drag !== null;
           return (
             <div key={k} style={{flex:1}}>
               <div
                 style={{
                   position:"relative",paddingBottom:aspectPad(img.aspect),background:"var(--sf2)",marginBottom:5,overflow:"hidden",
                   cursor:dim||!onSwap?"default":isDragging?"grabbing":"grab",userSelect:"none",touchAction:"none",
-                  transform:isDragging?`translateX(${clampedDx}px)`:"none",
-                  transition:isDragging?"none":"transform .15s ease",
+                  transform:thisDx?`translateX(${thisDx}px)`:"none",
+                  transition:isActive?"none":"transform 0.28s cubic-bezier(0.16,1,0.3,1)",
                   zIndex:isDragging?2:1,
                 }}
                 onPointerDown={dim||!onSwap?undefined:e=>{
