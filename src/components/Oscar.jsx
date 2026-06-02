@@ -1140,7 +1140,7 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
   const dragRef = useRef(null);
   if (!iA||!iB) return null;
   const ss = { background:"var(--sf)", border:"1px solid var(--bd)", color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" };
-  const THRESH = 48;
+  const THRESH = 80;
   return (
     <div className="pc" style={{opacity:dim ? 0.8 : 1}}>
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
@@ -1153,21 +1153,30 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
         {[["a",iA],["b",iB]].map(([k,img])=>{
           const isDragging = drag?.key === k;
           const rawDx = drag ? drag.x - drag.startX : 0;
-          const dx = isDragging ? rawDx : 0;
-          const willSwap = isDragging && (k==="a" ? dx > THRESH : dx < -THRESH);
-          // dragged image follows cursor; non-dragged image slides opposite to make room
-          const thisDx = isDragging
-            ? Math.sign(dx) * Math.min(Math.abs(dx), 90)
-            : drag ? -rawDx * 0.18 : 0;
-          const isActive = isDragging || drag !== null;
+          const dragWillSwap = drag && (drag.key==="a" ? rawDx > THRESH : rawDx < -THRESH);
+
+          let imgTransform = 'none';
+          let imgTransition = 'transform 0.28s cubic-bezier(0.16,1,0.3,1)';
+          if (isDragging) {
+            imgTransform = `translateX(${rawDx}px)`;
+            imgTransition = 'none';
+          } else if (drag) {
+            // snap to vacated slot when threshold crossed
+            if (dragWillSwap) {
+              imgTransform = drag.key==="a" ? 'translateX(calc(-100% - 7px))' : 'translateX(calc(100% + 7px))';
+            }
+            imgTransition = 'transform 0.18s cubic-bezier(0.16,1,0.3,1)';
+          }
+
+          const willSwap = isDragging && dragWillSwap;
           return (
             <div key={k} style={{flex:1}}>
               <div
                 style={{
                   position:"relative",paddingBottom:aspectPad(img.aspect),background:"var(--sf2)",marginBottom:5,overflow:"hidden",
                   cursor:dim||!onSwap?"default":isDragging?"grabbing":"grab",userSelect:"none",touchAction:"none",
-                  transform:thisDx?`translateX(${thisDx}px)`:"none",
-                  transition:isActive?"none":"transform 0.28s cubic-bezier(0.16,1,0.3,1)",
+                  transform:imgTransform,
+                  transition:imgTransition,
                   zIndex:isDragging?2:1,
                 }}
                 onPointerDown={dim||!onSwap?undefined:e=>{
@@ -1199,7 +1208,7 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
                 }}
               >
                 <img src={imgUrl(img)} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} loading="lazy"/>
-                {isDragging&&Math.abs(dx)>8&&(
+                {isDragging&&Math.abs(rawDx)>8&&(
                   <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.45)",pointerEvents:"none"}}>
                     <span style={{fontSize:18,color:willSwap?"#fff":"rgba(255,255,255,.35)",transition:"color .1s"}}>⇄</span>
                   </div>
