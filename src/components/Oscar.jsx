@@ -1041,11 +1041,13 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     dbUpdatePair(pid, { [`${f}_${k}`]: v }).catch(err => console.error("Failed to update pair:", err));
   };
   const swapPair = pid => {
-    const pair = pairs.find(p=>p.id===pid);
-    if (!pair) return;
-    setPairs(p=>p.map(x=>x.id===pid?{...x,a:{id:x.b.id,side:"L",size:x.b.size},b:{id:x.a.id,side:"R",size:x.a.size}}:x));
-    dbUpdatePair(pid,{image_a_id:pair.b.id,side_a:"L",size_a:pair.b.size,image_b_id:pair.a.id,side_b:"R",size_b:pair.a.size})
-      .catch(err=>console.error("Failed to swap pair:",err));
+    setPairs(p=>{
+      const pair = p.find(x=>x.id===pid);
+      if (!pair) return p;
+      dbUpdatePair(pid,{image_a_id:pair.b.id,side_a:"L",size_a:pair.b.size,image_b_id:pair.a.id,side_b:"R",size_b:pair.a.size})
+        .catch(err=>console.error("Failed to swap pair:",err));
+      return p.map(x=>x.id===pid?{...x,a:{id:x.b.id,side:"L",size:x.b.size},b:{id:x.a.id,side:"R",size:x.a.size}}:x);
+    });
   };
   const del = pid => {
     setPairs(p=>p.filter(x=>x.id!==pid));
@@ -1153,7 +1155,8 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
         {[["a",iA],["b",iB]].map(([k,img])=>{
           const isDragging = drag?.key === k;
           const rawDx = drag ? drag.x - drag.startX : 0;
-          const dragWillSwap = drag && (drag.key==="a" ? rawDx > THRESH : rawDx < -THRESH);
+          // once threshold crossed, stay snapped even if cursor drifts back
+          const dragWillSwap = drag && (drag.crossed || (drag.key==="a" ? rawDx > THRESH : rawDx < -THRESH));
 
           let imgTransform = 'none';
           let imgTransition = 'transform 0.28s cubic-bezier(0.16,1,0.3,1)';
@@ -1161,7 +1164,6 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
             imgTransform = `translateX(${rawDx}px)`;
             imgTransition = 'none';
           } else if (drag) {
-            // snap to vacated slot when threshold crossed
             if (dragWillSwap) {
               imgTransform = drag.key==="a" ? 'translateX(calc(-100% - 7px))' : 'translateX(calc(100% + 7px))';
             }
@@ -1182,11 +1184,13 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
                 onPointerDown={dim||!onSwap?undefined:e=>{
                   e.preventDefault();
                   const startX = e.clientX;
-                  dragRef.current = {key:k, startX, x:startX};
+                  dragRef.current = {key:k, startX, x:startX, crossed:false};
                   setDrag({...dragRef.current});
                   const onMove = ev=>{
                     if(!dragRef.current) return;
-                    dragRef.current = {...dragRef.current, x:ev.clientX};
+                    const ddx = ev.clientX - dragRef.current.startX;
+                    const crossed = dragRef.current.crossed || (k==="a" ? ddx > THRESH : ddx < -THRESH);
+                    dragRef.current = {...dragRef.current, x:ev.clientX, crossed};
                     setDrag({...dragRef.current});
                   };
                   const cleanup = ()=>{
@@ -1195,10 +1199,7 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
                     window.removeEventListener('pointercancel',onCancel);
                   };
                   const onUp = ()=>{
-                    if(dragRef.current){
-                      const ddx=dragRef.current.x-dragRef.current.startX;
-                      if(k==="a"?ddx>THRESH:ddx<-THRESH) onSwap(pair.id);
-                    }
+                    if(dragRef.current?.crossed) onSwap(pair.id);
                     dragRef.current=null; setDrag(null); cleanup();
                   };
                   const onCancel=()=>{ dragRef.current=null; setDrag(null); cleanup(); };
