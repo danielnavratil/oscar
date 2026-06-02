@@ -1166,25 +1166,32 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
                   zIndex:isDragging?2:1,
                 }}
                 onPointerDown={dim||!onSwap?undefined:e=>{
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  const d = {key:k, startX:e.clientX, x:e.clientX};
-                  dragRef.current = d;
-                  setDrag(d);
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  dragRef.current = {key:k, startX, x:startX};
+                  setDrag({...dragRef.current});
+                  const onMove = ev=>{
+                    if(!dragRef.current) return;
+                    dragRef.current = {...dragRef.current, x:ev.clientX};
+                    setDrag({...dragRef.current});
+                  };
+                  const cleanup = ()=>{
+                    window.removeEventListener('pointermove',onMove);
+                    window.removeEventListener('pointerup',onUp);
+                    window.removeEventListener('pointercancel',onCancel);
+                  };
+                  const onUp = ()=>{
+                    if(dragRef.current){
+                      const ddx=dragRef.current.x-dragRef.current.startX;
+                      if(k==="a"?ddx>THRESH:ddx<-THRESH) onSwap(pair.id);
+                    }
+                    dragRef.current=null; setDrag(null); cleanup();
+                  };
+                  const onCancel=()=>{ dragRef.current=null; setDrag(null); cleanup(); };
+                  window.addEventListener('pointermove',onMove);
+                  window.addEventListener('pointerup',onUp);
+                  window.addEventListener('pointercancel',onCancel);
                 }}
-                onPointerMove={e=>{
-                  if(dragRef.current?.key!==k) return;
-                  const d = {...dragRef.current, x:e.clientX};
-                  dragRef.current = d;
-                  setDrag({...d});
-                }}
-                onPointerUp={e=>{
-                  if(!dragRef.current||dragRef.current.key!==k) return;
-                  const ddx = dragRef.current.x - dragRef.current.startX;
-                  if(k==="a" ? ddx > THRESH : ddx < -THRESH) onSwap(pair.id);
-                  dragRef.current = null;
-                  setDrag(null);
-                }}
-                onPointerCancel={()=>{dragRef.current=null;setDrag(null);}}
               >
                 <img src={imgUrl(img)} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} loading="lazy"/>
                 {isDragging&&Math.abs(dx)>8&&(
