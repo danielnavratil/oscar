@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits } from "@/lib/db";
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
@@ -51,8 +51,9 @@ function cleanPrompt(prompt, refTypeList) {
   let p = (prompt||"").replace(/https?:\/\/\S+/g,"").trim();
   const params = [];
   p = p.replace(/(--[\w.-]+(?:\s+(?!--)\S+)*)/g,m=>{params.push(m.trim());return "";}).replace(/\s+/g," ").trim().toLowerCase();
-  const vParam = params.find(x=>x.startsWith("--v"));
-  const rest = params.filter(x=>!x.startsWith("--v"));
+  const filtered = params.filter(x => x !== '--sref');
+  const vParam = filtered.find(x=>x.startsWith("--v"));
+  const rest = filtered.filter(x=>!x.startsWith("--v"));
   const paramLine = [vParam,...rest].filter(Boolean).join(" ");
   const refLine = refTypeList?.length ? refTypeList.map(t=>`[${t}]`).join(" ") : "";
   return [p,refLine,paramLine].filter(Boolean).join("\n");
@@ -65,8 +66,9 @@ function mechClean(rawPrompt) {
   const paramPart = paramIdx >= 0 ? p.slice(paramIdx).trim() : "";
   const params = [];
   paramPart.replace(/(--[\w.-]+(?:\s+(?!--)\S+)*)/g, m => { params.push(m.trim()); return ""; });
-  const vParam = params.find(x => x.startsWith("--v"));
-  const rest = params.filter(x => !x.startsWith("--v"));
+  const filtered = params.filter(p => p !== '--sref');
+  const vParam = filtered.find(x => x.startsWith("--v"));
+  const rest = filtered.filter(x => !x.startsWith("--v"));
   const paramLine = [vParam, ...rest].filter(Boolean).join(" ");
   let body = bodyRaw.toLowerCase();
   body = body.replace(/\.\.\./g, "\x00").replace(/\.\./g, ".").replace(/\x00/g, "...");
@@ -409,6 +411,20 @@ export default function App() {
     dbUpdatePromptEditBody(imageId, editedBody).catch(e => console.error('[updateEditedBody]', e));
   }, []);
 
+  const reprocessAllPrompts = useCallback(async () => {
+    await dbClearPromptEdits().catch(err => console.error('[reprocess] clear failed:', err));
+    setPromptEdits({});
+    promptEditsRef.current = {};
+    processingPromptsRef.current.clear();
+    const allBmIds = [...new Set(Object.values(bookmarks).flatMap(s => [...s]))];
+    const toProcess = allBmIds.map(id => images.find(i => i.id === id)).filter(Boolean);
+    const BATCH = 5;
+    for (let i = 0; i < toProcess.length; i += BATCH) {
+      const delay = Math.floor(i / BATCH) * 2000;
+      setTimeout(() => { toProcess.slice(i, i + BATCH).forEach(img => processImagePrompt(img)); }, delay);
+    }
+  }, [bookmarks, images, processImagePrompt]);
+
   const handleUpload = file => {
     if (!file) return;
     const r = new FileReader();
@@ -514,7 +530,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user}/>}
-          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody}/>}
+          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts}/>}
         </main>
       </div>
     </ThemeCtx.Provider>
@@ -1297,7 +1313,7 @@ function PromptCell({ imageId, promptEdits, onSave }) {
 }
 
 // ── EXPORT TAB ─────────────────────────────────────────────────
-function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave }) {
+function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave, onReprocess }) {
   const getImg = id => images.find(i=>i.id===id);
   const vc = id => Object.values(votes).filter(s=>s.has(id)).length;
 
@@ -1386,6 +1402,8 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
           {flaggedCount>0&&(
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>· {flaggedCount} flagged</span>
           )}
+          <div style={{flex:1}}/>
+          <button className="pl" onClick={onReprocess}>reprocess all prompts</button>
         </div>
 
         <div style={{display:"flex",flexDirection:"column",gap:10}}>

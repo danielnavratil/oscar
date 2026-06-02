@@ -276,6 +276,14 @@ export async function deletePair(pairId: string) {
   if (error) throw error;
 }
 
+export async function clearPromptEdits() {
+  const { error } = await supabase
+    .from('prompt_edits')
+    .delete()
+    .eq('issue_id', ISSUE_ID);
+  if (error) throw error;
+}
+
 // ── PROMPT EDITS ─────────────────────────────────────────────
 
 export type PromptEdit = {
