@@ -1138,8 +1138,11 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
 
 function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
   const iA=getImg(pair.a.id), iB=getImg(pair.b.id);
-  const [drag, setDrag] = useState(null); // {key, startX, x}
+  const [drag, setDrag] = useState(null);
+  const [settling, setSettling] = useState(null); // {key} — animating to destination before commit
+  const [noTrans, setNoTrans] = useState(false);  // suppress transition during instant commit
   const dragRef = useRef(null);
+  const settleTimerRef = useRef(null);
   if (!iA||!iB) return null;
   const ss = { background:"var(--sf)", border:"1px solid var(--bd)", color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" };
   const THRESH = 80;
@@ -1155,11 +1158,10 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
         {[["a",iA],["b",iB]].map(([k,img])=>{
           const isDragging = drag?.key === k;
           const rawDx = drag ? drag.x - drag.startX : 0;
-          // once threshold crossed, stay snapped even if cursor drifts back
           const dragWillSwap = drag && (drag.crossed || (drag.key==="a" ? rawDx > THRESH : rawDx < -THRESH));
 
           let imgTransform = 'none';
-          let imgTransition = 'transform 0.28s cubic-bezier(0.16,1,0.3,1)';
+          let imgTransition = noTrans ? 'none' : 'transform 0.28s cubic-bezier(0.16,1,0.3,1)';
           if (isDragging) {
             imgTransform = `translateX(${rawDx}px)`;
             imgTransition = 'none';
@@ -1167,7 +1169,13 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
             if (dragWillSwap) {
               imgTransform = drag.key==="a" ? 'translateX(calc(-100% - 7px))' : 'translateX(calc(100% + 7px))';
             }
-            imgTransition = 'transform 0.18s cubic-bezier(0.16,1,0.3,1)';
+            imgTransition = noTrans ? 'none' : 'transform 0.18s cubic-bezier(0.16,1,0.3,1)';
+          } else if (settling) {
+            // dragged image continues forward to destination; other stays in vacated slot
+            imgTransform = k === settling.key
+              ? (settling.key==="a" ? 'translateX(calc(100% + 7px))' : 'translateX(calc(-100% - 7px))')
+              : (settling.key==="a" ? 'translateX(calc(-100% - 7px))' : 'translateX(calc(100% + 7px))');
+            imgTransition = noTrans ? 'none' : 'transform 0.28s cubic-bezier(0.16,1,0.3,1)';
           }
 
           const willSwap = isDragging && dragWillSwap;
@@ -1183,6 +1191,8 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
                 }}
                 onPointerDown={dim||!onSwap?undefined:e=>{
                   e.preventDefault();
+                  // cancel any in-flight settle
+                  if (settleTimerRef.current) { clearTimeout(settleTimerRef.current); settleTimerRef.current=null; setSettling(null); setNoTrans(false); }
                   const startX = e.clientX;
                   dragRef.current = {key:k, startX, x:startX, crossed:false};
                   setDrag({...dragRef.current});
@@ -1199,8 +1209,20 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
                     window.removeEventListener('pointercancel',onCancel);
                   };
                   const onUp = ()=>{
-                    if(dragRef.current?.crossed) onSwap(pair.id);
-                    dragRef.current=null; setDrag(null); cleanup();
+                    if(dragRef.current?.crossed) {
+                      // Phase 1: animate to destination (drag ends, settling begins)
+                      dragRef.current=null; setDrag(null); setSettling({key:k}); cleanup();
+                      // Phase 2: after animation, commit swap + reset transforms instantly
+                      settleTimerRef.current = setTimeout(()=>{
+                        settleTimerRef.current=null;
+                        setNoTrans(true);
+                        onSwap(pair.id);
+                        setSettling(null);
+                        requestAnimationFrame(()=>requestAnimationFrame(()=>setNoTrans(false)));
+                      }, 300);
+                    } else {
+                      dragRef.current=null; setDrag(null); cleanup();
+                    }
                   };
                   const onCancel=()=>{ dragRef.current=null; setDrag(null); cleanup(); };
                   window.addEventListener('pointermove',onMove);
