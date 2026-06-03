@@ -702,12 +702,12 @@ function ProjectPicker({ initialUser, onEnter, dark, onToggleDark }) {
                 <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
                   <div>
                     <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:4,letterSpacing:".08em"}}>DISPLAY NAME</div>
-                    <input value={newProjName} onChange={e=>setNewProjName(e.target.value)} placeholder="Issue 38 — Daily Theme"
+                    <input value={newProjName} onChange={e=>setNewProjName(e.target.value)} placeholder="Issue 39 — Daily Theme"
                       style={{width:"100%",boxSizing:"border-box",fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd)",padding:"6px 8px",outline:"none"}}/>
                   </div>
                   <div>
                     <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:4,letterSpacing:".08em"}}>PROJECT ID</div>
-                    <input value={newProjId} onChange={e=>setNewProjId(e.target.value)} placeholder="38-DT"
+                    <input value={newProjId} onChange={e=>setNewProjId(e.target.value)} placeholder="39-DT"
                       style={{width:"100%",boxSizing:"border-box",fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd)",padding:"6px 8px",outline:"none"}}/>
                   </div>
                   <div>
@@ -1659,7 +1659,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
             <input
               value={issueFolder}
               onChange={e=>updateFolder(e.target.value)}
-              placeholder="/path/to/issue/38"
+              placeholder="/path/to/issue/39"
               style={{width:"100%",boxSizing:"border-box",fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd2)",padding:"5px 7px",outline:"none"}}
             />
           </div>
