@@ -339,6 +339,37 @@ export async function updatePromptEditBody(imageId: string, editedBody: string) 
   if (error) throw error;
 }
 
+export async function cleanPromptEditBodies(): Promise<number> {
+  const { data, error } = await supabase
+    .from('prompt_edits')
+    .select('image_id, claude_body')
+    .eq('issue_id', ISSUE_ID);
+  if (error) throw error;
+
+  const dirty = (data ?? []).filter(r => {
+    const stripped = r.claude_body?.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
+    try {
+      const m = stripped?.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(m ? m[0] : stripped);
+      return !!parsed.body;
+    } catch { return false; }
+  });
+
+  for (const row of dirty) {
+    const stripped = row.claude_body.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
+    const m = stripped.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(m ? m[0] : stripped);
+    const { error: updateError } = await supabase
+      .from('prompt_edits')
+      .update({ claude_body: parsed.body, updated_at: new Date().toISOString() })
+      .eq('image_id', row.image_id)
+      .eq('issue_id', ISSUE_ID);
+    if (updateError) throw updateError;
+  }
+
+  return dirty.length;
+}
+
 // ── REAL-TIME SUBSCRIPTIONS ───────────────────────────────────
 /**
  * Subscribe to all collaborative tables and call handlers on changes.

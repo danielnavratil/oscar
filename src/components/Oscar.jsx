@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies } from "@/lib/db";
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
@@ -442,6 +442,20 @@ export default function App() {
     }
   }, [addNotice]);
 
+  const cleanPromptBodies = useCallback(async () => {
+    try {
+      const count = await dbCleanPromptEditBodies();
+      if (count === 0) { addNotice('All prompt bodies already clean.'); return; }
+      const cleaned = await loadPromptEdits();
+      setPromptEdits(cleaned);
+      promptEditsRef.current = cleaned;
+      addNotice(`Cleaned ${count} prompt ${count === 1 ? 'body' : 'bodies'}.`);
+    } catch(err) {
+      addNotice(`Cleanup failed: ${err?.message || err}`);
+      console.error('[clean-prompts] failed:', err);
+    }
+  }, [addNotice]);
+
   const handleUpload = file => {
     if (!file) return;
     const r = new FileReader();
@@ -557,7 +571,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt}/>}
-          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts}/>}
+          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies}/>}
         </main>
       </div>
     </ThemeCtx.Provider>
@@ -1353,7 +1367,7 @@ function PromptCell({ imageId, promptEdits, onSave }) {
 }
 
 // ── EXPORT TAB ─────────────────────────────────────────────────
-function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave, onReprocess }) {
+function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave, onReprocess, onClean }) {
   const getImg = id => images.find(i=>i.id===id);
   const vc = id => Object.values(votes).filter(s=>s.has(id)).length;
 
@@ -1443,6 +1457,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>· {flaggedCount} flagged</span>
           )}
           <div style={{flex:1}}/>
+          <button className="pl" onClick={onClean}>clean stored prompts</button>
           <button className="pl" onClick={onReprocess}>reprocess all prompts</button>
         </div>
 
