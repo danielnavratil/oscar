@@ -64,8 +64,10 @@ export function parseIssueJson(raw: string): unknown[] {
     const id = img.id;
     if (seen.has(id)) return false;
     seen.add(id);
-    // Skip base grid jobs and video jobs — only upsampled images have a usable CDN URL
-    return img.parent_grid != null;
+    const et = (img.event_type as string) ?? '';
+    // Keep only upsampled images — they're the only ones with a usable CDN thumbnail URL.
+    // If event_type is absent (older JSON exports), fall back to parent_grid presence.
+    return et ? et.includes('upsample') : img.parent_grid != null;
   });
 }
 
