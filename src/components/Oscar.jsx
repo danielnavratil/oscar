@@ -282,22 +282,21 @@ export default function App() {
   }, [tab]);
 
   useEffect(() => {
-    if (!promptEditsLoaded || !images.length) return;
-    const allBmIds = [...new Set(Object.values(bookmarks).flatMap(s => [...s]))];
-    if (!allBmIds.length || hasProcessedInitialRef.current) return;
+    if (!promptEditsLoaded || !images.length || !pairs.length) return;
+    if (hasProcessedInitialRef.current) return;
     hasProcessedInitialRef.current = true;
-    const unprocessed = allBmIds.filter(id => !promptEditsRef.current[id]);
-    const BATCH = 5;
+    const pairedIds = [...new Set(pairs.flatMap(p => [p.a.id, p.b.id]))];
+    const unprocessed = pairedIds.filter(id => !promptEditsRef.current[id]);
+    const BATCH = 2;
     for (let i = 0; i < unprocessed.length; i += BATCH) {
-      const delay = Math.floor(i / BATCH) * 2000;
       setTimeout(() => {
         unprocessed.slice(i, i + BATCH).forEach(id => {
           const img = images.find(img => img.id === id);
           if (img) processImagePrompt(img);
         });
-      }, delay);
+      }, Math.floor(i / BATCH) * 3000);
     }
-  }, [promptEditsLoaded, images, bookmarks]);
+  }, [promptEditsLoaded, images, pairs]);
 
   useEffect(() => {
     let voteReloadTimer;
@@ -386,13 +385,9 @@ export default function App() {
         console.error("Bookmark failed:", err);
         setBookmarks(prev);
       });
-      if (!had) {
-        const img = images.find(i => i.id === id);
-        if (img) processImagePrompt(img);
-      }
       return { ...prev, [user]: m };
     });
-  }, [user, images, processImagePrompt]);
+  }, [user]);
   const toggleVote = useCallback(id => {
     if (!user) return;
     const key = `${user}:${id}`;
@@ -560,7 +555,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload}/>}
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
-          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user}/>}
+          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts}/>}
         </main>
       </div>
@@ -1041,7 +1036,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
 }
 
 // ── PAIR TAB ───────────────────────────────────────────────────
-function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user }) {
+function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user, processImagePrompt }) {
   const [catFilter, setCatFilter] = useState(null);
   const [poolMode, setPoolMode] = useState("unpaired");
   const [pairingA, setPairingA] = useState(null);
@@ -1060,6 +1055,8 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     const newPair = {id:`${Date.now()}`,a:{id:pairingA.id,side:"L",size:"full bleed"},b:{id:img.id,side:"R",size:"full bleed"},creator:user,type};
     setPairs(p=>[...p,newPair]);
     dbCreatePair(newPair).catch(err => console.error("Failed to save pair:", err));
+    processImagePrompt(pairingA);
+    processImagePrompt(img);
     setPairingA(null); setSuggestion(null);
   };
 
