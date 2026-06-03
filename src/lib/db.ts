@@ -8,22 +8,55 @@
 
 import { supabase } from './supabase';
 
-const ISSUE_ID = '38'; // TODO: make dynamic when supporting multiple issues
+let ISSUE_ID = '38';
+let ISSUE_JSON_PATH = 'issue-38.json';
 // image_id fields reference IDs from issue JSON (Storage), not a Postgres images table.
+
+export function setCurrentProject(issueId: string, jsonFile: string) {
+  ISSUE_ID = issueId;
+  ISSUE_JSON_PATH = jsonFile;
+}
 
 // ── ISSUE JSON (Storage) ──────────────────────────────────────
 
 const ISSUE_JSON_BUCKET = 'issue-json';
-const ISSUE_JSON_PATH = 'issue-38.json';
+const PROJECTS_MANIFEST = 'projects.json';
+
+export type Project = { id: string; name: string; file: string };
+const DEFAULT_PROJECTS: Project[] = [{ id: '38', name: 'Issue 38', file: 'issue-38.json' }];
+
+export async function listProjects(): Promise<Project[]> {
+  const { data, error } = await supabase.storage.from(ISSUE_JSON_BUCKET).download(PROJECTS_MANIFEST);
+  if (error) {
+    if (isStorageNotFound(error)) return DEFAULT_PROJECTS;
+    throw error;
+  }
+  return JSON.parse(await data.text());
+}
+
+export async function saveProjects(projects: Project[]): Promise<void> {
+  const blob = new Blob([JSON.stringify(projects, null, 2)], { type: 'application/json' });
+  const { error } = await supabase.storage
+    .from(ISSUE_JSON_BUCKET)
+    .upload(PROJECTS_MANIFEST, blob, { upsert: true, contentType: 'application/json' });
+  if (error) throw error;
+}
 
 function isStorageNotFound(error: { message?: string; statusCode?: string | number }) {
   const code = error.statusCode;
   return code === 404 || code === '404' || /not found|does not exist/i.test(error.message ?? '');
 }
 
-/** Parse raw issue JSON (array or object map) into an image array, deduped by id. */
+/** Parse raw issue JSON (array, object map, or NDJSON) into an image array, deduped by id. */
 export function parseIssueJson(raw: string): unknown[] {
-  const d = JSON.parse(raw);
+  let d: unknown;
+  try {
+    d = JSON.parse(raw);
+  } catch {
+    // NDJSON: one JSON object per line
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    d = lines.map(l => JSON.parse(l));
+  }
   const arr: unknown[] = Array.isArray(d) ? d : Object.values(d as Record<string, unknown>);
   const seen = new Set<unknown>();
   return arr.filter(item => {
@@ -34,25 +67,23 @@ export function parseIssueJson(raw: string): unknown[] {
   });
 }
 
-/** Upload raw JSON text to Storage (overwrites existing file). */
-export async function uploadIssueJson(rawJson: string) {
+/** Upload raw JSON text to Storage (overwrites existing file). Defaults to the current project's path. */
+export async function uploadIssueJson(rawJson: string, filePath?: string) {
+  const path = filePath ?? ISSUE_JSON_PATH;
   const bytes = new TextEncoder().encode(rawJson).length;
-  console.log(`[uploadIssueJson] Uploading ${ISSUE_JSON_PATH} (~${(bytes / 1024 / 1024).toFixed(2)} MB)`);
+  console.log(`[uploadIssueJson] Uploading ${path} (~${(bytes / 1024 / 1024).toFixed(2)} MB)`);
 
   const blob = new Blob([rawJson], { type: 'application/json' });
   const { error } = await supabase.storage
     .from(ISSUE_JSON_BUCKET)
-    .upload(ISSUE_JSON_PATH, blob, {
-      upsert: true,
-      contentType: 'application/json',
-    });
+    .upload(path, blob, { upsert: true, contentType: 'application/json' });
 
   if (error) {
     console.error('[uploadIssueJson] Failed:', error);
     throw error;
   }
 
-  console.log(`[uploadIssueJson] Uploaded ${ISSUE_JSON_PATH}`);
+  console.log(`[uploadIssueJson] Uploaded ${path}`);
 }
 
 /** Download issue JSON from Storage, or null if the file does not exist. */

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject } from "@/lib/db";
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
@@ -190,6 +190,9 @@ function applyPendingVoteOps(server, pending) {
 export default function App() {
   const [dark, setDark] = useState(false);
   const [user, setUser] = useState(null);
+  const [projectId, setProjectId] = useState(null);
+  const [projectName, setProjectName] = useState('');
+  const [projectFile, setProjectFile] = useState('');
   useEffect(() => {
     const saved = localStorage.getItem('oscar_user');
     if (saved) setUser(saved);
@@ -223,58 +226,65 @@ export default function App() {
   const dismissNotice = useCallback((id) => setNotices(prev => prev.filter(n => n.id !== id)), []);
 
   useEffect(() => {
+    if (!projectId) return;
     let cancelled = false;
     loadIssueJson()
       .then(data => { if (!cancelled && data) setImages(data); })
       .catch(err => { addNotice(`Failed to load images: ${err.message}`); console.error("Failed to load issue JSON:", err); });
     return () => { cancelled = true; };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
     let cancelled = false;
     loadBookmarks()
       .then(data => { if (!cancelled) setBookmarks(data); })
       .catch(err => { addNotice(`Failed to load bookmarks: ${err.message}`); console.error("Failed to load bookmarks:", err); });
     return () => { cancelled = true; };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
     let cancelled = false;
     loadCategories()
       .then(data => { if (!cancelled) setCategories(data); })
       .catch(err => console.error("Failed to load categories:", err));
     return () => { cancelled = true; };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
     let cancelled = false;
     loadVotes()
       .then(data => { if (!cancelled) setVotes(data); })
       .catch(err => console.error("Failed to load votes:", err));
     return () => { cancelled = true; };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
     let cancelled = false;
     loadVotingState()
       .then(data => { if (!cancelled) setVotingOpen(data); })
       .catch(err => console.error("Failed to load voting state:", err));
     return () => { cancelled = true; };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
     let cancelled = false;
     loadPairs()
       .then(data => { if (!cancelled) setPairs(data); })
       .catch(err => console.error("Failed to load pairs:", err));
     return () => { cancelled = true; };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
     loadPromptEdits()
       .then(edits => { setPromptEdits(edits); promptEditsRef.current = edits; setPromptEditsLoaded(true); })
       .catch(err => console.error("Failed to load prompt edits:", err));
-  }, []);
+  }, [projectId]);
 
   useEffect(() => { promptEditsRef.current = promptEdits; }, [promptEdits]);
   useEffect(() => {
@@ -299,6 +309,7 @@ export default function App() {
   }, [promptEditsLoaded, images, pairs]);
 
   useEffect(() => {
+    if (!projectId) return;
     let voteReloadTimer;
     const unsub = subscribeToChanges({
       onBookmarkChange: () => {
@@ -323,7 +334,7 @@ export default function App() {
       clearTimeout(voteReloadTimer);
       unsub();
     };
-  }, []);
+  }, [projectId]);
 
   const myBm = bookmarks[user] || new Set();
   const allBm = new Set(Object.values(bookmarks).flatMap(s=>[...s]));
@@ -432,6 +443,33 @@ export default function App() {
     dbUpdatePromptEditBody(imageId, editedBody).catch(e => console.error('[updateEditedBody]', e));
   }, []);
 
+  const handleEnterProject = useCallback((selectedUser, project) => {
+    setCurrentProject(project.id, project.file);
+    setUser(selectedUser);
+    setProjectId(project.id);
+    setProjectName(project.name);
+    setProjectFile(project.file);
+  }, []);
+
+  const handleBack = useCallback(() => {
+    setProjectId(null);
+    setProjectName('');
+    setProjectFile('');
+    setImages([]);
+    setBookmarks({});
+    setCategories({});
+    setVotes({});
+    setSubmitted(new Set());
+    setPairs([]);
+    setVotingOpen(false);
+    setRefTypes({});
+    setPromptEdits({});
+    promptEditsRef.current = {};
+    setPromptEditsLoaded(false);
+    hasProcessedInitialRef.current = false;
+    processingPromptsRef.current.clear();
+  }, []);
+
   const reprocessAllPrompts = useCallback(async () => {
     try {
       await dbClearPromptEdits();
@@ -468,7 +506,7 @@ export default function App() {
         uploadIssueJson(raw).catch(err => console.error("Failed to upload issue JSON:", err));
       } catch { alert("Invalid JSON"); }
     };
-    r.readAsText(f);
+    r.readAsText(file);
   };
 
   const CATEGORIZE_PROMPT = `You are categorizing Midjourney AI images for a print magazine.
@@ -521,11 +559,11 @@ Reply with ONLY the category name, exactly as written above.`;
   const collImages = images.filter(i=>allBm.has(i.id));
   const sortedColl = [...collImages].sort((a,b)=>voteCount(b.id)-voteCount(a.id));
 
-  if (!user) return (
+  if (!projectId) return (
     <ThemeCtx.Provider value={dark?"dark":"light"}>
       <GlobalStyles/>
       <div className={dark?"dark":""} style={{background:"var(--bg)",minHeight:"100vh"}}>
-        <NamePicker onSelect={setUser} dark={dark} onToggleDark={()=>setDark(v=>!v)}/>
+        <ProjectPicker initialUser={user} onEnter={handleEnterProject} dark={dark} onToggleDark={()=>setDark(v=>!v)}/>
       </div>
     </ThemeCtx.Provider>
   );
@@ -537,7 +575,7 @@ Reply with ONLY the category name, exactly as written above.`;
         <header style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 22px",borderBottom:"1px solid var(--bd)",height:50,flexShrink:0,position:"sticky",top:0,zIndex:100,background:"var(--hdr-bg)"}}>
           <div style={{display:"flex",alignItems:"baseline",gap:10}}>
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:16,fontWeight:500,color:"var(--tx)",letterSpacing:"-.02em"}}>Oscar</span>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".1em"}}>ISS. 38</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".1em",textTransform:"uppercase"}}>{projectName}</span>
           </div>
           <nav style={{display:"flex",height:"100%"}}>
             {["browse","collection","vote","pair","export"].map(t=>(
@@ -551,7 +589,7 @@ Reply with ONLY the category name, exactly as written above.`;
           </nav>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)"}}>{user}</span>
-            <button className="pl" onClick={()=>setUser(null)} style={{padding:"2px 7px",fontSize:9}}>switch</button>
+            <button className="pl" onClick={handleBack} style={{padding:"2px 7px",fontSize:9}}>← back</button>
             <ShortcutsTooltip/>
             <button className="pl" onClick={()=>setDark(v=>!v)} style={{padding:"3px 8px",fontSize:11}}>{dark?"☀":"☾"}</button>
           </div>
@@ -571,35 +609,124 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt}/>}
-          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies}/>}
+          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies} projectFile={projectFile}/>}
         </main>
       </div>
     </ThemeCtx.Provider>
   );
 }
 
-// ── NAME PICKER ────────────────────────────────────────────────
-function NamePicker({ onSelect, dark, onToggleDark }) {
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState("");
+// ── PROJECT PICKER ─────────────────────────────────────────────
+function ProjectPicker({ initialUser, onEnter, dark, onToggleDark }) {
+  const [selectedUser, setSelectedUser] = useState(initialUser || null);
+  const [projects, setProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [addingProject, setAddingProject] = useState(false);
+  const [newProjName, setNewProjName] = useState('');
+  const [newProjId, setNewProjId] = useState('');
+  const [newProjFile, setNewProjFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    listProjects()
+      .then(setProjects)
+      .catch(console.error)
+      .finally(() => setLoadingProjects(false));
+  }, []);
+
+  const handleProjectClick = (project) => {
+    if (!selectedUser) return;
+    onEnter(selectedUser, project);
+  };
+
+  const handleAddProject = async () => {
+    if (!newProjName.trim() || !newProjId.trim() || !newProjFile) return;
+    setUploading(true);
+    try {
+      const raw = await newProjFile.text();
+      parseIssueJson(raw); // validate format
+      const file = `${newProjId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.json`;
+      await uploadIssueJson(raw, file);
+      const newProject = { id: newProjId.trim(), name: newProjName.trim(), file };
+      const updated = [...projects, newProject];
+      await saveProjects(updated);
+      setProjects(updated);
+      setAddingProject(false);
+      setNewProjName(''); setNewProjId(''); setNewProjFile(null);
+    } catch(e) {
+      alert(`Failed: ${e.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",position:"relative"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
       <button onClick={onToggleDark} style={{position:"absolute",top:18,right:22,background:"none",border:"1px solid var(--bd)",color:"var(--tx2)",cursor:"pointer",padding:"3px 10px",fontFamily:"'DM Mono',monospace",fontSize:11}}>{dark?"☀":"☾"}</button>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:42,fontWeight:500,color:"var(--tx)",marginBottom:6,letterSpacing:"-.02em"}}>Oscar</div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx3)",letterSpacing:".18em",marginBottom:52}}>ISSUE 38</div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)",marginBottom:18,letterSpacing:".06em"}}>who are you?</div>
-      <div style={{display:"flex",gap:10}}>
-        {TEAM.map(n=><button key={n} className="ab" onClick={()=>onSelect(n)} style={{padding:"10px 28px",fontSize:13,letterSpacing:".04em"}}>{n}</button>)}
-      </div>
-      {!adding ? (
-        <button onClick={()=>setAdding(true)} style={{marginTop:24,background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx3)",letterSpacing:".06em",textDecoration:"underline",textUnderlineOffset:3}}>or add new voter</button>
-      ) : (
-        <div style={{marginTop:22,display:"flex",gap:8,alignItems:"center"}}>
-          <input autoFocus value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&newName.trim()&&onSelect(newName.trim())} placeholder="name" style={{background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx)",padding:"6px 12px",fontFamily:"'DM Mono',monospace",fontSize:12,outline:"none",width:160}}/>
-          <button className="ab" onClick={()=>newName.trim()&&onSelect(newName.trim())} style={{padding:"7px 16px",fontSize:11}}>join</button>
-          <button onClick={()=>setAdding(false)} className="pl" style={{padding:"6px 10px"}}>cancel</button>
+      <div style={{width:460}}>
+        <div style={{fontFamily:"'DM Mono',monospace",fontSize:42,fontWeight:500,color:"var(--tx)",letterSpacing:"-.02em",marginBottom:44}}>Oscar</div>
+
+        <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".12em",marginBottom:12}}>WHO ARE YOU</div>
+        <div style={{display:"flex",gap:8,marginBottom:40}}>
+          {TEAM.map(n=>(
+            <button key={n} onClick={()=>setSelectedUser(n)}
+              style={{background:selectedUser===n?"var(--ac)":"transparent",color:selectedUser===n?"var(--ac-tx)":"var(--tx2)",border:"1px solid",borderColor:selectedUser===n?"var(--ac)":"var(--bd)",fontFamily:"'DM Mono',monospace",fontSize:12,padding:"8px 22px",cursor:"pointer",transition:"all .15s",letterSpacing:".03em"}}>
+              {n}
+            </button>
+          ))}
         </div>
-      )}
+
+        <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".12em",marginBottom:10}}>RECENT PROJECTS</div>
+        <div style={{border:"1px solid var(--bd)"}}>
+          {loadingProjects ? (
+            <div style={{padding:"16px 18px",fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx3)"}}>loading…</div>
+          ) : projects.map((p, i) => (
+            <div key={p.id}
+              onClick={() => handleProjectClick(p)}
+              style={{padding:"14px 18px",borderBottom:i<projects.length-1?"1px solid var(--bd)":"none",cursor:selectedUser?"pointer":"default",background:"var(--sf)",display:"flex",alignItems:"center",justifyContent:"space-between",transition:"background .1s",opacity:selectedUser?1:0.45}}
+              onMouseEnter={e=>{if(selectedUser)e.currentTarget.style.background="var(--sf2)";}}
+              onMouseLeave={e=>{e.currentTarget.style.background="var(--sf)";}}>
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,color:"var(--tx)"}}>{p.name}</span>
+              <span style={{fontSize:12,color:"var(--tx3)"}}>→</span>
+            </div>
+          ))}
+        </div>
+
+        {selectedUser === 'Daniel' && (
+          <div style={{marginTop:14}}>
+            {!addingProject ? (
+              <button onClick={()=>setAddingProject(true)} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".08em",textDecoration:"underline",textUnderlineOffset:3,padding:0}}>+ add project</button>
+            ) : (
+              <div style={{border:"1px solid var(--bd)",padding:"16px 18px",background:"var(--sf)"}}>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".1em",marginBottom:12}}>NEW PROJECT</div>
+                <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+                  <div>
+                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:4,letterSpacing:".08em"}}>DISPLAY NAME</div>
+                    <input value={newProjName} onChange={e=>setNewProjName(e.target.value)} placeholder="Issue 38 — Daily Theme"
+                      style={{width:"100%",boxSizing:"border-box",fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd)",padding:"6px 8px",outline:"none"}}/>
+                  </div>
+                  <div>
+                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:4,letterSpacing:".08em"}}>PROJECT ID</div>
+                    <input value={newProjId} onChange={e=>setNewProjId(e.target.value)} placeholder="38-DT"
+                      style={{width:"100%",boxSizing:"border-box",fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd)",padding:"6px 8px",outline:"none"}}/>
+                  </div>
+                  <div>
+                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:4,letterSpacing:".08em"}}>JSON FILE</div>
+                    <input type="file" accept=".json" onChange={e=>setNewProjFile(e.target.files?.[0]||null)}
+                      style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)",width:"100%"}}/>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button className="ab" onClick={handleAddProject} disabled={uploading||!newProjName.trim()||!newProjId.trim()||!newProjFile} style={{padding:"6px 14px",fontSize:10}}>
+                    {uploading ? "uploading…" : "add project"}
+                  </button>
+                  <button className="pl" onClick={()=>{setAddingProject(false);setNewProjName('');setNewProjId('');setNewProjFile(null);}} style={{padding:"5px 10px",fontSize:10}}>cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1367,7 +1494,11 @@ function PromptCell({ imageId, promptEdits, onSave }) {
 }
 
 // ── EXPORT TAB ─────────────────────────────────────────────────
-function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave, onReprocess, onClean }) {
+function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave, onReprocess, onClean, projectFile }) {
+  const slug = projectFile ? projectFile.replace(/\.json$/, '') : 'project';
+  const bmFilename = `oscar-${slug}-bookmarks.json`;
+  const votedFilename = `oscar-${slug}-voted.json`;
+  const pairsFilename = `oscar-${slug}-pairs.json`;
   const getImg = id => images.find(i=>i.id===id);
   const vc = id => Object.values(votes).filter(s=>s.has(id)).length;
 
@@ -1430,7 +1561,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
   const updateFolder = v => { setIssueFolder(v); try { localStorage.setItem('oscar_pipeline_folder', v); } catch {} };
 
   const pipelineCommand = scriptPath && issueFolder
-    ? `"${scriptPath}" "${issueFolder}/oscar-issue-38-pairs.json"`
+    ? `"${scriptPath}" "${issueFolder}/${pairsFilename}"`
     : null;
 
   const copyCommand = () => {
@@ -1448,21 +1579,21 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-            <button className="ab" onClick={()=>downloadJson(bookmarkedImages,"oscar-issue-38-bookmarks.json")} disabled={!allBm.size}>Download bookmarks JSON</button>
+            <button className="ab" onClick={()=>downloadJson(bookmarkedImages,bmFilename)} disabled={!allBm.size}>Download bookmarks JSON</button>
             <div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{allBm.size} bookmarked images</div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>all bookmarks · vote counts · who voted · category · mj links</div>
             </div>
           </div>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-            <button className="ab" onClick={()=>downloadJson(votedImages,"oscar-issue-38-voted.json")} disabled={!votedImages.length}>Download voted JSON</button>
+            <button className="ab" onClick={()=>downloadJson(votedImages,votedFilename)} disabled={!votedImages.length}>Download voted JSON</button>
             <div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{votedImages.length} images with votes · sorted by vote count</div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>vote counts · who voted · category · mj links</div>
             </div>
           </div>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:28,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-            <button className="ab" onClick={()=>downloadJson(pairData,"oscar-issue-38-pairs.json")} disabled={!pairs.length}>Download pairs JSON</button>
+            <button className="ab" onClick={()=>downloadJson(pairData,pairsFilename)} disabled={!pairs.length}>Download pairs JSON</button>
             <div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images</div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>cleaned prompts · ref types · categories · L/R · size · mj links</div>
