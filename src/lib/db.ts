@@ -76,18 +76,7 @@ export function parseIssueJson(raw: string): unknown[] {
     return img.parent_grid != null && et !== 'video_diffusion';
   });
 
-  // Dedup by parent_id: keep only the most-liked image from each parent grid job.
-  const byParent = new Map<string, { item: unknown; likes: number }>();
-  const noParent: unknown[] = [];
-  for (const item of filtered) {
-    const img = item as Record<string, unknown>;
-    const parentId = img.parent_id as string | undefined;
-    if (!parentId) { noParent.push(item); continue; }
-    const likes = parseInt(String(img.likes ?? '0'), 10) || 0;
-    const existing = byParent.get(parentId);
-    if (!existing || likes > existing.likes) byParent.set(parentId, { item, likes });
-  }
-  return [...noParent, ...Array.from(byParent.values()).map(v => v.item)];
+  return filtered;
 }
 
 /** Upload raw JSON text to Storage (overwrites existing file). Defaults to the current project's path. */

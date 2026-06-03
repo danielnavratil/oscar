@@ -775,13 +775,35 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
   const [bmFilter, setBmFilter] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [colSize, setColSize] = useState("M");
+  const [dedup, setDedup] = useState(true);
+  const [search, setSearch] = useState("");
 
   const [chunkPages, setChunkPages] = useState({});
   const [fsIdx, setFsIdx] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
   const [swipeDir, setSwipeDir] = useState(null);
 
-  const chunks = groupByChunks(images, numChunks);
+  const filteredImages = (() => {
+    let imgs = images;
+    if (dedup) {
+      const byParent = new Map();
+      const noParent = [];
+      for (const img of imgs) {
+        if (!img.parent_id) { noParent.push(img); continue; }
+        const likes = parseInt(img.likes ?? '0') || 0;
+        const existing = byParent.get(img.parent_id);
+        if (!existing || likes > existing.likes) byParent.set(img.parent_id, { img, likes });
+      }
+      imgs = [...noParent, ...Array.from(byParent.values()).map(v => v.img)];
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      imgs = imgs.filter(img => (img.prompt || '').toLowerCase().includes(q));
+    }
+    return imgs;
+  })();
+
+  const chunks = groupByChunks(filteredImages, numChunks);
   const displayedChunks = chunkFilter ? chunks.filter(c=>c.key===chunkFilter) : chunks;
   const flatImages = displayedChunks.flatMap(c=>c.images);
 
@@ -889,6 +911,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
         <button className={`pl ${!chunkFilter&&!bmFilter?"on":""}`} onClick={()=>{setChunkFilter(null);setBmFilter(false);}}>all</button>
         {chunks.map((c,i)=><button key={c.key} className={`pl ${chunkFilter===c.key?"on":""}`} onClick={()=>{setChunkFilter(c.key);setBmFilter(false);}} style={{fontSize:9}}>{c.label} <span style={{opacity:.4}}>{c.images.length}</span></button>)}
         <button className={`pl ${bmFilter?"on":""}`} onClick={()=>{setBmFilter(v=>!v);setChunkFilter(null);}}>bookmarked <span style={{opacity:.4}}>{allBm.size}</span></button>
+        <button className={`pl ${dedup?"on":""}`} onClick={()=>setDedup(v=>!v)}>dedup</button>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
         <div style={{display:"flex",alignItems:"center",gap:5}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>split</span>
@@ -901,7 +924,12 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
           <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
         ))}
         <div style={{marginLeft:"auto",display:"flex",gap:7,alignItems:"center"}}>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{images.length.toLocaleString()}</span>
+          <div style={{position:"relative",display:"flex",alignItems:"center"}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="search prompts"
+              style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd)",padding:"3px 22px 3px 7px",outline:"none",width:160}}/>
+            {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:5,background:"none",border:"none",cursor:"pointer",color:"var(--tx3)",fontSize:11,lineHeight:1,padding:0}}>×</button>}
+          </div>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{filteredImages.length.toLocaleString()}</span>
           <label className="pl" style={{cursor:"pointer"}}>replace<input type="file" accept=".json" onChange={onUpload} style={{display:"none"}}/></label>
         </div>
       </div>
