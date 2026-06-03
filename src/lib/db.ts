@@ -60,10 +60,12 @@ export function parseIssueJson(raw: string): unknown[] {
   const arr: unknown[] = Array.isArray(d) ? d : Object.values(d as Record<string, unknown>);
   const seen = new Set<unknown>();
   return arr.filter(item => {
-    const id = (item as Record<string, unknown>).id;
+    const img = item as Record<string, unknown>;
+    const id = img.id;
     if (seen.has(id)) return false;
     seen.add(id);
-    return true;
+    // Skip base grid jobs and video jobs — only upsampled images have a usable CDN URL
+    return img.parent_grid != null;
   });
 }
 
