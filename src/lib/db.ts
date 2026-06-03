@@ -8,8 +8,8 @@
 
 import { supabase } from './supabase';
 
-let ISSUE_ID = '38';
-let ISSUE_JSON_PATH = 'issue-38.json';
+let ISSUE_ID = '39';
+let ISSUE_JSON_PATH = 'issue-39.json';
 // image_id fields reference IDs from issue JSON (Storage), not a Postgres images table.
 
 export function setCurrentProject(issueId: string, jsonFile: string) {
@@ -23,7 +23,7 @@ const ISSUE_JSON_BUCKET = 'issue-json';
 const PROJECTS_MANIFEST = 'projects.json';
 
 export type Project = { id: string; name: string; file: string };
-const DEFAULT_PROJECTS: Project[] = [{ id: '38', name: 'Issue 38', file: 'issue-38.json' }];
+const DEFAULT_PROJECTS: Project[] = [{ id: '39', name: 'Issue 39', file: 'issue-39.json' }];
 
 export async function listProjects(): Promise<Project[]> {
   const { data, error } = await supabase.storage.from(ISSUE_JSON_BUCKET).download(PROJECTS_MANIFEST);
