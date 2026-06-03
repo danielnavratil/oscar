@@ -13,7 +13,7 @@ const SIZES = ["full bleed","inset small","inset large"];
 
 const ThemeCtx = createContext("light");
 
-const imgUrl = img => `https://cdn.midjourney.com/${img.id}/0_${img.parent_grid}_640_N.webp`;
+const imgUrl = img => `https://cdn.midjourney.com/${img.id}/0_0_640_N.webp`;
 const COL_COUNTS = {S:10, M:7, L:5, XL:3};
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
 const toBase64 = async (url) => {
@@ -194,8 +194,18 @@ export default function App() {
   const [projectName, setProjectName] = useState('');
   const [projectFile, setProjectFile] = useState('');
   useEffect(() => {
-    const saved = localStorage.getItem('oscar_user');
-    if (saved) setUser(saved);
+    try {
+      const savedUser = localStorage.getItem('oscar_user');
+      if (savedUser) setUser(savedUser);
+      const savedProject = localStorage.getItem('oscar_project');
+      if (savedProject) {
+        const p = JSON.parse(savedProject);
+        setCurrentProject(p.id, p.file);
+        setProjectId(p.id);
+        setProjectName(p.name);
+        setProjectFile(p.file);
+      }
+    } catch {}
   }, []);
   useEffect(() => {
     if (user) localStorage.setItem('oscar_user', user);
@@ -449,12 +459,14 @@ export default function App() {
     setProjectId(project.id);
     setProjectName(project.name);
     setProjectFile(project.file);
+    try { localStorage.setItem('oscar_project', JSON.stringify({ id: project.id, name: project.name, file: project.file })); } catch {}
   }, []);
 
   const handleBack = useCallback(() => {
     setProjectId(null);
     setProjectName('');
     setProjectFile('');
+    try { localStorage.removeItem('oscar_project'); } catch {};
     setImages([]);
     setBookmarks({});
     setCategories({});
