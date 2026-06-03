@@ -1291,10 +1291,21 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
   );
 }
 
+function extractPromptBody(text) {
+  if (!text) return text;
+  const stripped = text.replace(/^```[a-z]*\s*/i, "").replace(/```\s*$/, "").trim();
+  try {
+    const m = stripped.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(m ? m[0] : stripped);
+    if (parsed.body) return parsed.body;
+  } catch {}
+  return stripped;
+}
+
 // ── PROMPT CELL ────────────────────────────────────────────────
 function PromptCell({ imageId, promptEdits, onSave }) {
   const edit = promptEdits?.[imageId];
-  const effective = edit ? (edit.editedBody ?? edit.claudeBody) : null;
+  const effective = edit ? (edit.editedBody ?? extractPromptBody(edit.claudeBody)) : null;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
@@ -1371,7 +1382,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
   const getCleanedPrompt = (img) => {
     const edit = promptEdits?.[img.id];
     if (edit) {
-      const body = edit.editedBody ?? edit.claudeBody;
+      const body = edit.editedBody ?? extractPromptBody(edit.claudeBody);
       return edit.params ? `${body}\n${edit.params}` : body;
     }
     return cleanPrompt(img.prompt, refTypes[img.id]);
