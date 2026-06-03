@@ -359,7 +359,8 @@ export default function App() {
       const text = (data.content?.[0]?.text || "").trim();
       let claudeBody = mechBody, flagged = false, flagReason = null;
       try {
-        const parsed = JSON.parse(text);
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
         claudeBody = (parsed.body || mechBody).toLowerCase().trim();
         flagged = !!parsed.flagged;
         flagReason = parsed.flag_reason || null;
@@ -1424,7 +1425,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
 
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".08em"}}>PAIRS · {pairs.length}</span>
-          {pairs.length>0&&processedCount<pairs.length*2&&(
+          {pairs.length>0&&(
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{processedCount}/{pairs.length*2} prompts ready</span>
           )}
           {flaggedCount>0&&(
