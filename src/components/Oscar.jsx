@@ -13,7 +13,9 @@ const SIZES = ["full bleed","inset small","inset large"];
 
 const ThemeCtx = createContext("light");
 
-const imgUrl = img => `https://cdn.midjourney.com/${img.id}/0_0_640_N.webp`;
+const imgUrl = img => img.parent_id && img.parent_grid != null
+  ? `https://cdn.midjourney.com/${img.parent_id}/0_${img.parent_grid}_640_N.webp`
+  : `https://cdn.midjourney.com/${img.id}/0_0_640_N.webp`;
 const COL_COUNTS = {S:10, M:7, L:5, XL:3};
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
 const toBase64 = async (url) => {
