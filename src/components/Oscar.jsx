@@ -1422,67 +1422,126 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
   const processedCount = allPairIds.filter(id=>promptEdits?.[id]).length;
   const flaggedCount = allPairIds.filter(id=>promptEdits?.[id]?.flagged).length;
 
+  const [scriptPath, setScriptPath] = useState(() => { try { return localStorage.getItem('oscar_pipeline_script') || ''; } catch { return ''; } });
+  const [issueFolder, setIssueFolder] = useState(() => { try { return localStorage.getItem('oscar_pipeline_folder') || ''; } catch { return ''; } });
+  const [copied, setCopied] = useState(false);
+
+  const updateScript = v => { setScriptPath(v); try { localStorage.setItem('oscar_pipeline_script', v); } catch {} };
+  const updateFolder = v => { setIssueFolder(v); try { localStorage.setItem('oscar_pipeline_folder', v); } catch {} };
+
+  const pipelineCommand = scriptPath && issueFolder
+    ? `"${scriptPath}" "${issueFolder}/oscar-issue-38-pairs.json"`
+    : null;
+
+  const copyCommand = () => {
+    if (!pipelineCommand) return;
+    navigator.clipboard.writeText(pipelineCommand).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div style={{padding:"28px 32px",overflowY:"auto",height:"calc(100vh - 50px)"}}>
-      <div style={{maxWidth:860}}>
-        <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
-        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-          <button className="ab" onClick={()=>downloadJson(bookmarkedImages,"oscar-issue-38-bookmarks.json")} disabled={!allBm.size}>Download bookmarks JSON</button>
-          <div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{allBm.size} bookmarked images</div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>all bookmarks · vote counts · who voted · category · mj links</div>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-          <button className="ab" onClick={()=>downloadJson(votedImages,"oscar-issue-38-voted.json")} disabled={!votedImages.length}>Download voted JSON</button>
-          <div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{votedImages.length} images with votes · sorted by vote count</div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>vote counts · who voted · category · mj links</div>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:28,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-          <button className="ab" onClick={()=>downloadJson(pairData,"oscar-issue-38-pairs.json")} disabled={!pairs.length}>Download pairs JSON</button>
-          <div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images</div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>cleaned prompts · ref types · categories · L/R · size · mj links</div>
-          </div>
-        </div>
+      <div style={{display:"flex",gap:28,alignItems:"flex-start"}}>
 
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".08em"}}>PAIRS · {pairs.length}</span>
-          {pairs.length>0&&(
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{processedCount}/{pairs.length*2} prompts ready</span>
-          )}
-          {flaggedCount>0&&(
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>· {flaggedCount} flagged</span>
-          )}
-          <div style={{flex:1}}/>
-          <button className="pl" onClick={onClean}>clean stored prompts</button>
-          <button className="pl" onClick={onReprocess}>reprocess all prompts</button>
-        </div>
-
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {pairData.map(p=>(
-            <div key={p.pair} style={{padding:"14px 16px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-              <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:12}}>pair {p.pair}</div>
-              <div style={{display:"flex",gap:24}}>
-                {[p.imageA,p.imageB].map((img,idx)=>img&&(
-                  <div key={idx} style={{width:200,flexShrink:0}}>
-                    <img src={img.thumbnailUrl} alt="" loading="lazy"
-                      style={{width:200,height:"auto",display:"block"}}
-                      onError={e=>e.target.style.opacity=".2"}/>
-                    <div style={{height:15}}/>
-                    <div style={{fontSize:9,color:"var(--tx)",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",marginBottom:2}}>{img.side} · {img.size}</div>
-                    <div style={{fontSize:9,color:"var(--tx2)",fontFamily:"'DM Mono',monospace"}}>@{img.username}</div>
-                    <div style={{fontSize:8,color:"var(--tx3)",marginTop:1,textTransform:"capitalize",marginBottom:8}}>{img.category||"—"}</div>
-                    <PromptCell imageId={img.id} promptEdits={promptEdits} onSave={onEditSave}/>
-                  </div>
-                ))}
-              </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
+          <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+            <button className="ab" onClick={()=>downloadJson(bookmarkedImages,"oscar-issue-38-bookmarks.json")} disabled={!allBm.size}>Download bookmarks JSON</button>
+            <div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{allBm.size} bookmarked images</div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>all bookmarks · vote counts · who voted · category · mj links</div>
             </div>
-          ))}
-          {!pairData.length&&<div style={{fontSize:11,color:"var(--tx3)",textAlign:"center",padding:"40px 0"}}>create confirmed pairs first</div>}
+          </div>
+          <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+            <button className="ab" onClick={()=>downloadJson(votedImages,"oscar-issue-38-voted.json")} disabled={!votedImages.length}>Download voted JSON</button>
+            <div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{votedImages.length} images with votes · sorted by vote count</div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>vote counts · who voted · category · mj links</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:28,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+            <button className="ab" onClick={()=>downloadJson(pairData,"oscar-issue-38-pairs.json")} disabled={!pairs.length}>Download pairs JSON</button>
+            <div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images</div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>cleaned prompts · ref types · categories · L/R · size · mj links</div>
+            </div>
+          </div>
+
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".08em"}}>PAIRS · {pairs.length}</span>
+            {pairs.length>0&&(
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{processedCount}/{pairs.length*2} prompts ready</span>
+            )}
+            {flaggedCount>0&&(
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>· {flaggedCount} flagged</span>
+            )}
+            <div style={{flex:1}}/>
+            <button className="pl" onClick={onClean}>clean stored prompts</button>
+            <button className="pl" onClick={onReprocess}>reprocess all prompts</button>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {pairData.map(p=>(
+              <div key={p.pair} style={{padding:"14px 16px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:12}}>pair {p.pair}</div>
+                <div style={{display:"flex",gap:24}}>
+                  {[p.imageA,p.imageB].map((img,idx)=>img&&(
+                    <div key={idx} style={{width:200,flexShrink:0}}>
+                      <img src={img.thumbnailUrl} alt="" loading="lazy"
+                        style={{width:200,height:"auto",display:"block"}}
+                        onError={e=>e.target.style.opacity=".2"}/>
+                      <div style={{height:15}}/>
+                      <div style={{fontSize:9,color:"var(--tx)",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",marginBottom:2}}>{img.side} · {img.size}</div>
+                      <div style={{fontSize:9,color:"var(--tx2)",fontFamily:"'DM Mono',monospace"}}>@{img.username}</div>
+                      <div style={{fontSize:8,color:"var(--tx3)",marginTop:1,textTransform:"capitalize",marginBottom:8}}>{img.category||"—"}</div>
+                      <PromptCell imageId={img.id} promptEdits={promptEdits} onSave={onEditSave}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!pairData.length&&<div style={{fontSize:11,color:"var(--tx3)",textAlign:"center",padding:"40px 0"}}>create confirmed pairs first</div>}
+          </div>
         </div>
+
+        <div style={{width:260,flexShrink:0,padding:"18px 20px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:16}}>PIPELINE</div>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",lineHeight:1.8,marginBottom:18}}>
+            <div>1. Download pairs JSON</div>
+            <div>2. Move it to the issue folder</div>
+            <div>3. Paste the paths below</div>
+            <div>4. Copy the command and run in Terminal</div>
+          </div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:5,letterSpacing:".08em"}}>SCRIPT PATH</div>
+            <input
+              value={scriptPath}
+              onChange={e=>updateScript(e.target.value)}
+              placeholder="/path/to/oscar_pipeline.sh"
+              style={{width:"100%",boxSizing:"border-box",fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd2)",padding:"5px 7px",outline:"none"}}
+            />
+          </div>
+          <div style={{marginBottom:16}}>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:5,letterSpacing:".08em"}}>ISSUE FOLDER</div>
+            <input
+              value={issueFolder}
+              onChange={e=>updateFolder(e.target.value)}
+              placeholder="/path/to/issue/38"
+              style={{width:"100%",boxSizing:"border-box",fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx)",background:"var(--bg)",border:"1px solid var(--bd2)",padding:"5px 7px",outline:"none"}}
+            />
+          </div>
+          {pipelineCommand&&(
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",background:"var(--bg)",border:"1px solid var(--bd)",padding:"7px 9px",marginBottom:12,wordBreak:"break-all",lineHeight:1.7}}>
+              {pipelineCommand}
+            </div>
+          )}
+          <button className="ab" onClick={copyCommand} disabled={!pipelineCommand} style={{width:"100%"}}>
+            {copied ? "copied!" : "copy pipeline command"}
+          </button>
+        </div>
+
       </div>
     </div>
   );
