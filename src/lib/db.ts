@@ -34,6 +34,13 @@ export async function listProjects(): Promise<Project[]> {
   return JSON.parse(await data.text());
 }
 
+export async function upsertIssue(id: string, name: string): Promise<void> {
+  const { error } = await supabase
+    .from('issues')
+    .upsert({ id, name, created_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
 export async function saveProjects(projects: Project[]): Promise<void> {
   const blob = new Blob([JSON.stringify(projects, null, 2)], { type: 'application/json' });
   const { error } = await supabase.storage
