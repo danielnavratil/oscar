@@ -77,6 +77,17 @@ function mechClean(rawPrompt) {
   return { body, params: paramLine };
 }
 
+function claudeErrorMessage(status, data) {
+  const type = data?.error?.type;
+  if (status === 429 || type === 'rate_limit_error')
+    return 'Claude API rate limit reached — wait a few minutes, then reprocess.';
+  if (status === 529 || type === 'overloaded_error')
+    return 'Claude API is overloaded — wait a moment and try again.';
+  if (status === 402)
+    return 'Claude API credits exhausted — check your balance at console.anthropic.com.';
+  return `Claude API error (${status}): ${data?.error?.message || 'unknown error'}`;
+}
+
 const COPY_EDIT_SYSTEM = `Copy-edit a Midjourney prompt body for a print magazine. The text is already lowercased and mechanically cleaned.
 
 Apply:
@@ -205,12 +216,17 @@ export default function App() {
   const processingPromptsRef = useRef(new Set());
   const promptEditsRef = useRef({});
   const hasProcessedInitialRef = useRef(false);
+  const [notices, setNotices] = useState([]);
+  const addNotice = useCallback((msg) => {
+    setNotices(prev => prev.some(n => n.msg === msg) ? prev : [...prev, { id: Date.now() + Math.random(), msg }]);
+  }, []);
+  const dismissNotice = useCallback((id) => setNotices(prev => prev.filter(n => n.id !== id)), []);
 
   useEffect(() => {
     let cancelled = false;
     loadIssueJson()
       .then(data => { if (!cancelled && data) setImages(data); })
-      .catch(err => console.error("Failed to load issue JSON:", err));
+      .catch(err => { addNotice(`Failed to load images: ${err.message}`); console.error("Failed to load issue JSON:", err); });
     return () => { cancelled = true; };
   }, []);
 
@@ -218,7 +234,7 @@ export default function App() {
     let cancelled = false;
     loadBookmarks()
       .then(data => { if (!cancelled) setBookmarks(data); })
-      .catch(err => console.error("Failed to load bookmarks:", err));
+      .catch(err => { addNotice(`Failed to load bookmarks: ${err.message}`); console.error("Failed to load bookmarks:", err); });
     return () => { cancelled = true; };
   }, []);
 
@@ -324,17 +340,23 @@ export default function App() {
     try {
       const { body: mechBody, params } = mechClean(img.prompt);
       if (!mechBody) return;
-      const res = await fetch("/api/claude", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 400,
-          system: COPY_EDIT_SYSTEM,
-          messages: [{ role: "user", content: mechBody }]
-        })
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      let res;
+      try {
+        res = await fetch("/api/claude", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 400,
+            system: [{ type: "text", text: COPY_EDIT_SYSTEM, cache_control: { type: "ephemeral" } }],
+            messages: [{ role: "user", content: mechBody }]
+          })
+        });
+      } finally { clearTimeout(timeout); }
       const data = await res.json();
-      if (!res.ok) { console.error('[copy-edit] Claude error', data); return; }
+      if (!res.ok) { addNotice(claudeErrorMessage(res.status, data)); return; }
       const text = (data.content?.[0]?.text || "").trim();
       let claudeBody = mechBody, flagged = false, flagReason = null;
       try {
@@ -346,9 +368,12 @@ export default function App() {
       const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason };
       await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
       setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
-    } catch (e) { console.error('[copy-edit] error', e); }
+    } catch (e) {
+      if (e.name === 'AbortError') console.warn('[copy-edit] timed out:', img.id);
+      else { addNotice(`Prompt processing failed: ${e.message}`); console.error('[copy-edit] error', e); }
+    }
     finally { processingPromptsRef.current.delete(img.id); }
-  }, []);
+  }, [addNotice]);
 
   const toggleBm = useCallback((id) => {
     if (!user) return;
@@ -416,10 +441,10 @@ export default function App() {
       await dbClearPromptEdits();
       window.location.reload();
     } catch(err) {
+      addNotice(`Failed to clear prompts: ${err?.message || err}`);
       console.error('[reprocess] failed:', err);
-      alert('Failed to clear prompts: ' + (err?.message || err));
     }
-  }, []);
+  }, [addNotice]);
 
   const handleUpload = file => {
     if (!file) return;
@@ -473,11 +498,11 @@ Reply with ONLY the category name, exactly as written above.`;
             ]}] })
         });
         const data = await res.json();
-        if (!res.ok) { console.error('[categorize] Anthropic error', res.status, JSON.stringify(data)); continue; }
+        if (!res.ok) { addNotice(claudeErrorMessage(res.status, data)); continue; }
         const raw=(data.content?.[0]?.text||"").trim().toLowerCase();
         const cat=CATEGORIES.find(c=>raw===c||raw.startsWith(c));
         if (cat) updateCategory(img.id, cat);
-      } catch (e) { console.error('[categorize] fetch error', e); }
+      } catch (e) { addNotice(`Categorization failed: ${e.message}`); console.error('[categorize] fetch error', e); }
       onProgress(i+1);
     }
     onProgress(imgs.length);
@@ -521,6 +546,16 @@ Reply with ONLY the category name, exactly as written above.`;
             <button className="pl" onClick={()=>setDark(v=>!v)} style={{padding:"3px 8px",fontSize:11}}>{dark?"☀":"☾"}</button>
           </div>
         </header>
+        {notices.length > 0 && (
+          <div style={{display:"flex",flexDirection:"column",gap:1}}>
+            {notices.map(n => (
+              <div key={n.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 22px",background:"#fff3cd",borderBottom:"1px solid #f0c040",fontSize:11,fontFamily:"'DM Mono',monospace",color:"#7a5c00"}}>
+                <span style={{flex:1}}>{n.msg}</span>
+                <button onClick={()=>dismissNotice(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#7a5c00",fontSize:13,lineHeight:1,padding:"0 2px",flexShrink:0}}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
         <main style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload}/>}
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
