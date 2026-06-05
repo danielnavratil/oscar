@@ -1576,8 +1576,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
     for (let i = 0; i < imgs.length; i++) {
       const img = imgs[i];
       try {
-        let res = await fetch(imgUrl(img, 2048));
-        if (!res.ok) res = await fetch(imgUrl(img, 640));
+        const res = await fetch(imgUrl(img, 2048));
         if (res.ok) {
           const blob = await res.blob();
           zip.file(`${String(i+1).padStart(3,'0')}_${img.id}.webp`, blob);
