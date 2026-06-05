@@ -14,9 +14,9 @@ const SIZES = ["full bleed","inset small","inset large"];
 
 const ThemeCtx = createContext("light");
 
-const imgUrl = img => img.parent_id && img.parent_grid != null
-  ? `https://cdn.midjourney.com/${img.parent_id}/0_${img.parent_grid}_640_N.webp`
-  : `https://cdn.midjourney.com/${img.id}/0_0_640_N.webp`;
+const imgUrl = (img, size=640) => img.parent_id && img.parent_grid != null
+  ? `https://cdn.midjourney.com/${img.parent_id}/0_${img.parent_grid}_${size}_N.webp`
+  : `https://cdn.midjourney.com/${img.id}/0_0_${size}_N.webp`;
 const COL_COUNTS = {S:10, M:7, L:5, XL:3};
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
 const toBase64 = async (url) => {
@@ -1576,7 +1576,8 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
     for (let i = 0; i < imgs.length; i++) {
       const img = imgs[i];
       try {
-        const res = await fetch(`/api/image-proxy?url=${encodeURIComponent(imgUrl(img))}`);
+        let res = await fetch(imgUrl(img, 2048));
+        if (!res.ok) res = await fetch(imgUrl(img, 640));
         if (res.ok) {
           const blob = await res.blob();
           zip.file(`${String(i+1).padStart(3,'0')}_${img.id}.webp`, blob);
