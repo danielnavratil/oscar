@@ -1567,6 +1567,21 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
 
   const [zipProgress, setZipProgress] = useState(null);
 
+  const webpToJpg = (blob) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext('2d').drawImage(image, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas toBlob failed')), 'image/jpeg', 0.95);
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    image.src = url;
+  });
+
   const downloadImages = async () => {
     const ids = [...myBm];
     const imgs = ids.map(id => getImg(id)).filter(Boolean);
@@ -1579,8 +1594,9 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
       try {
         const res = await fetch(imgUrl(img, 2048));
         if (res.ok) {
-          const blob = await res.blob();
-          zip.file(`${String(i+1).padStart(3,'0')}_${img.id}.webp`, blob);
+          const webp = await res.blob();
+          const jpg = await webpToJpg(webp);
+          zip.file(`${String(i+1).padStart(3,'0')}_${img.id}.jpg`, jpg);
         } else {
           failed = true;
           console.error(`image ${img.id} returned ${res.status}`);
@@ -1663,7 +1679,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
             </button>
             <div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{myBm.size} images bookmarked by {user}</div>
-              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>2048px · .zip archive · failures logged to console</div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>2048px · jpg · .zip archive · failures logged to console</div>
             </div>
           </div>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
