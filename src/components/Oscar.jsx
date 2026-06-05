@@ -1576,7 +1576,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
       canvas.height = image.naturalHeight;
       canvas.getContext('2d').drawImage(image, 0, 0);
       URL.revokeObjectURL(url);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas toBlob failed')), 'image/jpeg', 0.95);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas toBlob failed')), 'image/jpeg', 1.0);
     };
     image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
     image.src = url;
