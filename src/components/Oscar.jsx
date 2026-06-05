@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import JSZip from "jszip";
 import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject, upsertIssue } from "@/lib/db";
 
 
@@ -623,7 +624,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
           {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt}/>}
-          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies} projectFile={projectFile}/>}
+          {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies} projectFile={projectFile} user={user}/>}
         </main>
       </div>
     </ThemeCtx.Provider>
@@ -1537,7 +1538,7 @@ function PromptCell({ imageId, promptEdits, onSave }) {
 }
 
 // ── EXPORT TAB ─────────────────────────────────────────────────
-function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave, onReprocess, onClean, projectFile }) {
+function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, promptEdits, onEditSave, onReprocess, onClean, projectFile, user }) {
   const slug = projectFile ? projectFile.replace(/\.json$/, '') : 'project';
   const bmFilename = `oscar-${slug}-bookmarks.json`;
   const votedFilename = `oscar-${slug}-voted.json`;
@@ -1546,6 +1547,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
   const vc = id => Object.values(votes).filter(s=>s.has(id)).length;
 
   const allBm = new Set(Object.values(bookmarks).flatMap(s=>[...s]));
+  const myBm = bookmarks[user] || new Set();
 
   const fmtImg = (img) => ({
     id: img.id,
@@ -1561,6 +1563,33 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
   const downloadJson = (data, filename) => {
     const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
     const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
+  };
+
+  const [zipProgress, setZipProgress] = useState(null);
+
+  const downloadImages = async () => {
+    const ids = [...myBm];
+    const imgs = ids.map(id => getImg(id)).filter(Boolean);
+    if (!imgs.length) return;
+    setZipProgress({ done: 0, total: imgs.length });
+    const zip = new JSZip();
+    for (let i = 0; i < imgs.length; i++) {
+      const img = imgs[i];
+      try {
+        const res = await fetch(`/api/image-proxy?url=${encodeURIComponent(imgUrl(img))}`);
+        if (res.ok) {
+          const blob = await res.blob();
+          zip.file(`${String(i+1).padStart(3,'0')}_${img.id}.webp`, blob);
+        }
+      } catch {}
+      setZipProgress({ done: i + 1, total: imgs.length });
+    }
+    const content = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(content);
+    a.download = `oscar-${slug}-my-images.zip`;
+    a.click();
+    setZipProgress(null);
   };
 
   const bookmarkedImages = [...allBm].map(id=>getImg(id)).filter(Boolean).map(fmtImg)
@@ -1621,6 +1650,15 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
 
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
+          <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
+            <button className="ab" onClick={downloadImages} disabled={!myBm.size||!!zipProgress}>
+              {zipProgress ? `downloading… ${zipProgress.done}/${zipProgress.total}` : 'Download my images'}
+            </button>
+            <div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{myBm.size} images bookmarked by {user}</div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>saves actual image files · .zip archive</div>
+            </div>
+          </div>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
             <button className="ab" onClick={()=>downloadJson(bookmarkedImages,bmFilename)} disabled={!allBm.size}>Download bookmarks JSON</button>
             <div>
