@@ -1571,18 +1571,25 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
     const ids = [...myBm];
     const imgs = ids.map(id => getImg(id)).filter(Boolean);
     if (!imgs.length) return;
-    setZipProgress({ done: 0, total: imgs.length });
+    setZipProgress({ done: 0, total: imgs.length, failed: 0 });
     const zip = new JSZip();
     for (let i = 0; i < imgs.length; i++) {
       const img = imgs[i];
+      let failed = false;
       try {
         const res = await fetch(imgUrl(img, 2048));
         if (res.ok) {
           const blob = await res.blob();
           zip.file(`${String(i+1).padStart(3,'0')}_${img.id}.webp`, blob);
+        } else {
+          failed = true;
+          console.error(`image ${img.id} returned ${res.status}`);
         }
-      } catch {}
-      setZipProgress({ done: i + 1, total: imgs.length });
+      } catch(e) {
+        failed = true;
+        console.error(`image ${img.id} fetch error:`, e);
+      }
+      setZipProgress(p => ({ done: p.done + 1, total: p.total, failed: p.failed + (failed ? 1 : 0) }));
     }
     const content = await zip.generateAsync({ type: 'blob' });
     const a = document.createElement('a');
@@ -1652,11 +1659,11 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".12em",marginBottom:22}}>EXPORT</div>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
             <button className="ab" onClick={downloadImages} disabled={!myBm.size||!!zipProgress}>
-              {zipProgress ? `downloading… ${zipProgress.done}/${zipProgress.total}` : 'Download my images'}
+              {zipProgress ? `downloading… ${zipProgress.done}/${zipProgress.total}${zipProgress.failed ? ` · ${zipProgress.failed} failed` : ''}` : 'Download my images'}
             </button>
             <div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{myBm.size} images bookmarked by {user}</div>
-              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>saves actual image files · .zip archive</div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>2048px · .zip archive · failures logged to console</div>
             </div>
           </div>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:10,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
