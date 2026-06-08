@@ -17,6 +17,34 @@ const ThemeCtx = createContext("light");
 const imgUrl = (img, size=640) => img.parent_id && img.parent_grid != null
   ? `https://cdn.midjourney.com/${img.parent_id}/0_${img.parent_grid}_${size}_N.webp`
   : `https://cdn.midjourney.com/${img.id}/0_0_${size}_N.webp`;
+const mjJobUrl = img => `https://www.midjourney.com/jobs/${img.id}?index=0`;
+const webpToJpg = (blob) => new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(blob);
+  const image = new Image();
+  image.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    canvas.getContext('2d').drawImage(image, 0, 0);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas toBlob failed')), 'image/jpeg', 1.0);
+  };
+  image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+  image.src = url;
+});
+const downloadImage = async (img) => {
+  try {
+    const res = await fetch(imgUrl(img, 2048));
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const jpg = await webpToJpg(await res.blob());
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(jpg);
+    a.download = `${img.id}.jpg`;
+    a.click();
+  } catch (e) {
+    console.error(`image ${img.id} download failed:`, e);
+  }
+};
 const COL_COUNTS = {S:10, M:7, L:5, XL:3};
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
 const toBase64 = async (url) => {
@@ -895,6 +923,10 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
             <p style={{fontSize:11,color:"var(--tx2)",lineHeight:1.75,fontFamily:"'DM Mono',monospace"}}>{fsImg.prompt}</p>
           </div>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)"}}>@{fsImg.user_name}</div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="pl" onClick={()=>downloadImage(fsImg)} style={{flex:1,padding:"7px 0",fontSize:10,textAlign:"center"}}>download</button>
+            <a className="pl" href={mjJobUrl(fsImg)} target="_blank" rel="noopener noreferrer" style={{flex:1,padding:"7px 0",fontSize:10,textAlign:"center",textDecoration:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>view on mj</a>
+          </div>
           <button className={fsBm?"ab":"pl"} onClick={()=>doAdvance(true)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",cursor:"pointer",width:"100%"}}>
             {fsBm?"bookmarked":"bookmark  [B]"}
           </button>
@@ -1092,6 +1124,10 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
           <p style={{fontSize:11,color:"var(--tx2)",lineHeight:1.75,fontFamily:"'DM Mono',monospace"}}>{img.prompt}</p>
         </div>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)"}}>@{img.user_name}</div>
+        <div style={{display:"flex",gap:8}}>
+          <button className="pl" onClick={()=>downloadImage(img)} style={{flex:1,padding:"7px 0",fontSize:10,textAlign:"center"}}>download</button>
+          <a className="pl" href={mjJobUrl(img)} target="_blank" rel="noopener noreferrer" style={{flex:1,padding:"7px 0",fontSize:10,textAlign:"center",textDecoration:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>view on mj</a>
+        </div>
         {onBm&&<button className={bm?"ab":"pl"} onClick={()=>onBm(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{bm?"✓ bookmarked":"bookmark"}</button>}
         {onVote&&<button className={voted?"ab":"pl"} onClick={()=>onVote(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{voted?"✓ voted":"vote"}</button>}
         <div style={{borderTop:"1px solid var(--bd)",paddingTop:14,fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",lineHeight:2.5}}>
@@ -1566,21 +1602,6 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
   };
 
   const [zipProgress, setZipProgress] = useState(null);
-
-  const webpToJpg = (blob) => new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const image = new Image();
-    image.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      canvas.getContext('2d').drawImage(image, 0, 0);
-      URL.revokeObjectURL(url);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas toBlob failed')), 'image/jpeg', 1.0);
-    };
-    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
-    image.src = url;
-  });
 
   const downloadImages = async () => {
     const ids = [...myBm];
