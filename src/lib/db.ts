@@ -71,12 +71,23 @@ export function parseIssueJson(raw: string): unknown[] {
     const id = img.id;
     if (seen.has(id)) return false;
     seen.add(id);
-    // Exclude video jobs (no image CDN path) and base grid jobs (no parent_grid).
+    // Exclude video jobs (no image CDN path) and base grid jobs (no grid position).
     const et = (img.event_type as string) ?? '';
-    return img.parent_grid != null && et !== 'video_diffusion';
+    const hasGridRef = img.parent_grid != null || img.grid_index != null;
+    return hasGridRef && et !== 'video_diffusion';
   });
 
-  return filtered;
+  // Newer exports use grid_index/username instead of parent_grid/user_name (and have
+  // no parent_id, since each entry's own id is already the per-image job UUID).
+  return filtered.map(item => {
+    const img = item as Record<string, unknown>;
+    return {
+      ...img,
+      parent_id: img.parent_id ?? img.id,
+      parent_grid: img.parent_grid ?? img.grid_index,
+      user_name: img.user_name ?? img.username ?? img.display_name,
+    };
+  });
 }
 
 /** Upload raw JSON text to Storage (overwrites existing file). Defaults to the current project's path. */
