@@ -250,6 +250,9 @@ export default function App() {
   const [pairs, setPairs] = useState([]);
   const [votingOpen, setVotingOpen] = useState(false);
   const [refTypes, setRefTypes] = useState({});
+  const [categorizing, setCategorizing] = useState(false);
+  const [categorizeProgress, setCategorizeProgress] = useState({ done: 0, total: 0 });
+  const categorizingRef = useRef(false);
   const [tab, setTab] = useState(() => {
     if (typeof window === 'undefined') return "browse";
     try { return localStorage.getItem('oscar_tab') || "browse"; } catch { return "browse"; }
@@ -470,13 +473,6 @@ export default function App() {
     dbSetCategory(id, cat).catch(err => console.error("Failed to save category:", err));
   }, []);
 
-  const toggleVotingOpen = useCallback(() => {
-    setVotingOpen(prev => {
-      const next = !prev;
-      dbSetVotingOpen(next).catch(err => console.error("Failed to save voting state:", err));
-      return next;
-    });
-  }, []);
   const submitVotes = () => setSubmitted(s=>new Set([...s,user]));
 
   const updateEditedBody = useCallback(async (imageId, editedBody) => {
@@ -602,6 +598,31 @@ Reply with ONLY the category name, exactly as written above.`;
   const collImages = images.filter(i=>allBm.has(i.id));
   const sortedColl = [...collImages].sort((a,b)=>voteCount(b.id)-voteCount(a.id));
 
+  const runCategorization = useCallback(async (imgs) => {
+    if (categorizingRef.current || imgs.length === 0) return;
+    categorizingRef.current = true;
+    setCategorizing(true);
+    setCategorizeProgress({ done: 0, total: Math.min(imgs.length, MAX_CATEGORIZE) });
+    try {
+      await categorizeAll(imgs, done => setCategorizeProgress(p => ({ ...p, done })));
+    } catch (e) {
+      addNotice(`Categorization stopped: ${e?.message ?? e}`);
+      console.error('[categorize] stopped:', e);
+    } finally {
+      categorizingRef.current = false;
+      setCategorizing(false);
+    }
+  }, [categorizeAll, addNotice]);
+
+  const toggleVotingOpen = useCallback(() => {
+    setVotingOpen(prev => {
+      const next = !prev;
+      dbSetVotingOpen(next).catch(err => console.error("Failed to save voting state:", err));
+      if (next) runCategorization(collImages);
+      return next;
+    });
+  }, [runCategorization, collImages]);
+
   if (!projectId) return (
     <ThemeCtx.Provider value={dark?"dark":"light"}>
       <GlobalStyles/>
@@ -631,6 +652,7 @@ Reply with ONLY the category name, exactly as written above.`;
             ))}
           </nav>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {categorizing&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".05em"}}>categorizing… {categorizeProgress.done}/{categorizeProgress.total}</span>}
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:"var(--tx2)"}}>{user}</span>
             <button className="pl" onClick={handleBack} style={{padding:"2px 7px",fontSize:9}}>← back</button>
             <ShortcutsTooltip/>
@@ -649,8 +671,8 @@ Reply with ONLY the category name, exactly as written above.`;
         )}
         <main style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload}/>}
-          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizeAll={categorizeAll} refTypes={refTypes} setRefTypes={setRefTypes}/>}
-          {tab==="vote"&&<VoteTab images={sortedColl} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
+          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizing={categorizing} categorizeProgress={categorizeProgress} runCategorization={runCategorization} refTypes={refTypes} setRefTypes={setRefTypes}/>}
+          {tab==="vote"&&<VoteTab images={collImages} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
           {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies} projectFile={projectFile} user={user}/>}
         </main>
@@ -1139,9 +1161,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
 }
 
 // ── COLLECTION TAB ─────────────────────────────────────────────
-function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, toggleVotingOpen, categorizeAll, refTypes, setRefTypes }) {
-  const [progress, setProgress] = useState(0);
-  const [running, setRunning] = useState(false);
+function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, toggleVotingOpen, categorizing, categorizeProgress, runCategorization, refTypes, setRefTypes }) {
   const [catFilter, setCatFilter] = useState(null);
   const [showRefsOnly, setShowRefsOnly] = useState(false);
   const [fsOpen, setFsOpen] = useState(false);
@@ -1149,7 +1169,6 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, my
 
   const setCategory = (id,cat) => onCategoryChange(id,cat);
   const setRefType = (id,types) => setRefTypes(p=>({...p,[id]:types}));
-  const run = async () => { setRunning(true); setProgress(0); await categorizeAll(collImages,p=>setProgress(p)); setRunning(false); };
   const categorized = collImages.filter(i=>categories[i.id]).length;
   const refImages = collImages.filter(i=>hasRefs(i.prompt));
   const taggedRefs = refImages.filter(i=>refTypes[i.id]?.length);
@@ -1164,8 +1183,8 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, my
       <div style={{padding:"9px 18px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",gap:9,flexShrink:0,flexWrap:"wrap",background:"var(--sf2)"}}>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{collImages.length} bookmarked</span>
         <div style={{width:1,height:14,background:"var(--bd)"}}/>
-        <button className="ab" onClick={run} disabled={running||collImages.length===0}>
-          {running?`categorizing… ${progress}/${collImages.length}`:`ai categorize${categorized>0?` (${categorized}/${collImages.length})`:""}`}
+        <button className="ab" onClick={()=>runCategorization(collImages)} disabled={categorizing||collImages.length===0}>
+          {categorizing?`categorizing… ${categorizeProgress.done}/${categorizeProgress.total}`:`ai categorize${categorized>0?` (${categorized}/${collImages.length})`:""}`}
         </button>
         {refImages.length>0&&<button className={`pl ${showRefsOnly?"em":""}`} onClick={()=>setShowRefsOnly(v=>!v)}>⚠ refs · {taggedRefs.length}/{refImages.length} tagged</button>}
         <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
@@ -1203,14 +1222,22 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, my
 }
 
 // ── VOTE TAB ───────────────────────────────────────────────────
+const VOTE_SORTS = {
+  date: (a,b) => new Date(a.enqueue_time)-new Date(b.enqueue_time),
+  votes_desc: (a,b,vc) => vc(b.id)-vc(a.id),
+  votes_asc: (a,b,vc) => vc(a.id)-vc(b.id),
+};
+
 function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, onBm, categories, votingOpen, submitted, onSubmit, user }) {
   const [showOthers, setShowOthers] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
+  const [sortBy, setSortBy] = useState("date");
   const [fsOpen, setFsOpen] = useState(false);
   const [fsIdx, setFsIdx] = useState(0);
   const myVoteCount = images.filter(i=>myVotes.has(i.id)).length;
   const hasSubmitted = submitted.has(user);
-  const filtered = catFilter ? images.filter(i=>categories[i.id]===catFilter) : images;
+  const sorted = [...images].sort((a,b)=>VOTE_SORTS[sortBy](a,b,voteCount));
+  const filtered = catFilter ? sorted.filter(i=>categories[i.id]===catFilter) : sorted;
   const openFs = img => { setFsIdx(filtered.findIndex(i=>i.id===img.id)); setFsOpen(true); };
 
   if (!votingOpen) return (
@@ -1235,6 +1262,12 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
         {CATEGORIES.filter(c=>images.some(i=>categories[i.id]===c)).map(c=>(
           <button key={c} className={`pl ${catFilter===c?"on":""}`} onClick={()=>setCatFilter(c)} style={{textTransform:"capitalize"}}>{c}</button>
         ))}
+        <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
+        <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={selStyle()}>
+          <option value="date">sort: date</option>
+          <option value="votes_desc">sort: most votes</option>
+          <option value="votes_asc">sort: fewest votes</option>
+        </select>
         <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center"}}>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {TEAM.map(n=>(
