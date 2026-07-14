@@ -1108,9 +1108,7 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
 // ── FULLSCREEN VIEWER ──────────────────────────────────────────
 function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
   const [idx, setIdx] = useState(startIdx);
-  const idxRef = useRef(idx);
   const imgsRef = useRef(images);
-  useEffect(() => { idxRef.current = idx; }, [idx]);
   useEffect(() => { imgsRef.current = images; }, [images]);
 
   useEffect(() => {
@@ -1118,7 +1116,6 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
       if (e.key === "Escape") { onClose(); return; }
       if (e.key === "ArrowLeft") setIdx(i => Math.max(i-1, 0));
       if (e.key === "ArrowRight") setIdx(i => Math.min(i+1, imgsRef.current.length-1));
-      if ((e.metaKey||e.ctrlKey) && onBm) { const img=imgsRef.current[idxRef.current]; if(img) onBm(img.id); }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -1153,7 +1150,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
         {onBm&&<button className={bm?"ab":"pl"} onClick={()=>onBm(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{bm?"✓ bookmarked":"bookmark"}</button>}
         {onVote&&<button className={voted?"ab":"pl"} onClick={()=>onVote(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{voted?"✓ voted":"vote"}</button>}
         <div style={{borderTop:"1px solid var(--bd)",paddingTop:14,fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",lineHeight:2.5}}>
-          ← →  navigate{onBm?" · ⌘  bookmark":""}{onVote?" · ⌘  vote":""}<br/>Esc  close · click bg  close
+          ← →  navigate<br/>Esc  close · click bg  close
         </div>
       </div>
     </div>
