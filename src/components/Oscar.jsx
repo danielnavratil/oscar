@@ -1346,8 +1346,9 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
 
   const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
   const pool = poolMode==="all" ? sortedColl : unpairedPool;
-  let filteredPool = catFilter ? pool.filter(i=>categories[i.id]===catFilter) : pool;
-  if (coverFilter) filteredPool = filteredPool.filter(i=>allCover.has(i.id));
+  // cover picks stay visible even when already paired, so the filter spans all bookmarked
+  const basePool = coverFilter ? sortedColl.filter(i=>allCover.has(i.id)) : pool;
+  const filteredPool = catFilter ? basePool.filter(i=>categories[i.id]===catFilter) : basePool;
 
   const handleSel = img => {
     if (!pairingA) { setPairingA(img); setSuggestion(null); return; }
@@ -1424,7 +1425,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
             <button key={c} className={`pl ${catFilter===c?"on":""}`} onClick={()=>setCatFilter(c)} style={{textTransform:"capitalize"}}>{c} <span style={{opacity:.4}}>{pool.filter(i=>categories[i.id]===c).length}</span></button>
           ))}
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
-          <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{pool.filter(i=>allCover.has(i.id)).length}</span></button>
+          <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{sortedColl.filter(i=>allCover.has(i.id)).length}</span></button>
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
             {["S","M","L","XL"].map(s=>(
               <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
