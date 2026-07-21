@@ -164,6 +164,40 @@ export async function removeBookmark(imageId: string, voterName: string) {
   if (error) throw error;
 }
 
+// ── COVER PICKS ───────────────────────────────────────────────
+
+export async function loadCoverPicks(): Promise<Record<string, Set<string>>> {
+  const { data, error } = await supabase
+    .from('cover_picks')
+    .select('image_id, voter_name')
+    .eq('issue_id', ISSUE_ID);
+  if (error) throw error;
+
+  const result: Record<string, Set<string>> = {};
+  for (const row of data ?? []) {
+    if (!result[row.voter_name]) result[row.voter_name] = new Set();
+    result[row.voter_name].add(row.image_id);
+  }
+  return result;
+}
+
+export async function addCoverPick(imageId: string, voterName: string) {
+  const { error } = await supabase
+    .from('cover_picks')
+    .insert({ image_id: imageId, voter_name: voterName, issue_id: ISSUE_ID });
+  if (error && error.code !== '23505') throw error; // ignore duplicate
+}
+
+export async function removeCoverPick(imageId: string, voterName: string) {
+  const { error } = await supabase
+    .from('cover_picks')
+    .delete()
+    .eq('image_id', imageId)
+    .eq('voter_name', voterName)
+    .eq('issue_id', ISSUE_ID);
+  if (error) throw error;
+}
+
 // ── CATEGORIES ────────────────────────────────────────────────
 
 export async function loadCategories(): Promise<Record<string, string>> {
@@ -436,6 +470,7 @@ export async function cleanPromptEditBodies(): Promise<number> {
  */
 export function subscribeToChanges(handlers: {
   onBookmarkChange?: () => void;
+  onCoverPickChange?: () => void;
   onVoteChange?: () => void;
   onSubmissionChange?: () => void;
   onPairChange?: () => void;
@@ -446,6 +481,8 @@ export function subscribeToChanges(handlers: {
     .channel('oscar-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'bookmarks' },
       () => handlers.onBookmarkChange?.())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cover_picks' },
+      () => handlers.onCoverPickChange?.())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' },
       () => handlers.onVoteChange?.())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'vote_submissions' },

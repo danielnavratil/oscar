@@ -22,6 +22,18 @@ create table if not exists bookmarks (
 );
 create index if not exists bookmarks_issue_idx on bookmarks(issue_id);
 
+-- ── COVER PICKS ───────────────────────────────────────────────
+-- Images flagged as potential cover options; image_id matches issue JSON
+create table if not exists cover_picks (
+  id uuid default gen_random_uuid() primary key,
+  image_id text not null,
+  voter_name text not null,
+  issue_id text references issues(id) on delete cascade,
+  created_at timestamptz default now(),
+  unique(image_id, voter_name, issue_id)
+);
+create index if not exists cover_picks_issue_idx on cover_picks(issue_id);
+
 -- ── CATEGORIES ────────────────────────────────────────────────
 create table if not exists categories (
   image_id text primary key,
@@ -83,6 +95,7 @@ create index if not exists pairs_issue_idx on pairs(issue_id);
 -- ── ENABLE REAL-TIME ──────────────────────────────────────────
 -- Allows Supabase to push live updates to all connected clients
 alter publication supabase_realtime add table bookmarks;
+alter publication supabase_realtime add table cover_picks;
 alter publication supabase_realtime add table votes;
 alter publication supabase_realtime add table vote_submissions;
 alter publication supabase_realtime add table pairs;
@@ -94,6 +107,7 @@ alter publication supabase_realtime add table voting_state;
 -- Tighten this when you add proper auth.
 alter table issues enable row level security;
 alter table bookmarks enable row level security;
+alter table cover_picks enable row level security;
 alter table categories enable row level security;
 alter table ref_types enable row level security;
 alter table votes enable row level security;
@@ -103,6 +117,7 @@ alter table pairs enable row level security;
 
 create policy "allow all" on issues for all using (true) with check (true);
 create policy "allow all" on bookmarks for all using (true) with check (true);
+create policy "allow all" on cover_picks for all using (true) with check (true);
 create policy "allow all" on categories for all using (true) with check (true);
 create policy "allow all" on ref_types for all using (true) with check (true);
 create policy "allow all" on votes for all using (true) with check (true);

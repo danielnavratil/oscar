@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import JSZip from "jszip";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject, upsertIssue } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, loadCoverPicks, addCoverPick, removeCoverPick, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject, upsertIssue } from "@/lib/db";
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
 const MAX_CATEGORIZE = 1000;
 const TEAM = ["Daniel","Hongrae","Chase"];
 const COLORS = { Daniel:"#4d8fcc", Hongrae:"#e87a3a", Chase:"#6aaa6a" };
+const COVER_COLOR = "#c9a227";
+const coverBtnStyle = on => on ? {background:COVER_COLOR,borderColor:COVER_COLOR,color:"#1c1607"} : {borderColor:COVER_COLOR,color:COVER_COLOR};
 const REF_TYPES = ["Image Prompt","Style Reference","Character Reference","Omni Reference","Personalization"];
 const SIZES = ["full bleed","inset small","inset large"];
 
@@ -244,6 +246,7 @@ export default function App() {
   }, [user]);
   const [images, setImages] = useState([]);
   const [bookmarks, setBookmarks] = useState({});
+  const [coverPicks, setCoverPicks] = useState({});
   const [categories, setCategories] = useState({});
   const [votes, setVotes] = useState({});
   const [submitted, setSubmitted] = useState(new Set());
@@ -284,6 +287,15 @@ export default function App() {
     loadBookmarks()
       .then(data => { if (!cancelled) setBookmarks(data); })
       .catch(err => { addNotice(`Failed to load bookmarks: ${err.message}`); console.error("Failed to load bookmarks:", err); });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    loadCoverPicks()
+      .then(data => { if (!cancelled) setCoverPicks(data); })
+      .catch(err => { addNotice(`Failed to load cover picks: ${err.message}`); console.error("Failed to load cover picks:", err); });
     return () => { cancelled = true; };
   }, [projectId]);
 
@@ -359,6 +371,9 @@ export default function App() {
       onBookmarkChange: () => {
         loadBookmarks().then(setBookmarks).catch(err => console.error("Failed to reload bookmarks:", err));
       },
+      onCoverPickChange: () => {
+        loadCoverPicks().then(setCoverPicks).catch(err => console.error("Failed to reload cover picks:", err));
+      },
       onVoteChange: () => {
         clearTimeout(voteReloadTimer);
         voteReloadTimer = setTimeout(() => {
@@ -382,6 +397,8 @@ export default function App() {
 
   const myBm = bookmarks[user] || new Set();
   const allBm = new Set(Object.values(bookmarks).flatMap(s=>[...s]));
+  const myCover = coverPicks[user] || new Set();
+  const allCover = new Set(Object.values(coverPicks).flatMap(s=>[...s]));
   const myVotes = votes[user] || new Set();
   const voteCount = id => Object.values(votes).filter(s=>s.has(id)).length;
   const confirmedPairs = pairs.filter(p=>p.type==="confirmed");
@@ -444,6 +461,29 @@ export default function App() {
       return { ...prev, [user]: m };
     });
   }, [user]);
+  const coverPicksRef = useRef(coverPicks);
+  useEffect(() => { coverPicksRef.current = coverPicks; }, [coverPicks]);
+  const bookmarksRef = useRef(bookmarks);
+  useEffect(() => { bookmarksRef.current = bookmarks; }, [bookmarks]);
+  const toggleCover = useCallback((id) => {
+    if (!user) return;
+    const had = (coverPicksRef.current[user] || new Set()).has(id);
+    setCoverPicks(prev => {
+      const m = new Set(prev[user] || []);
+      if (had) m.delete(id); else m.add(id);
+      return { ...prev, [user]: m };
+    });
+    (had ? removeCoverPick(id, user) : addCoverPick(id, user)).catch(err => {
+      console.error("Cover pick failed:", err);
+      setCoverPicks(prev => {
+        const m = new Set(prev[user] || []);
+        if (had) m.add(id); else m.delete(id);
+        return { ...prev, [user]: m };
+      });
+    });
+    // cover options must be bookmarked to appear in the collection/pair pools
+    if (!had && !Object.values(bookmarksRef.current).some(s => s.has(id))) toggleBm(id);
+  }, [user, toggleBm]);
   const toggleVote = useCallback(id => {
     if (!user) return;
     const key = `${user}:${id}`;
@@ -496,6 +536,7 @@ export default function App() {
     try { localStorage.removeItem('oscar_project'); } catch {};
     setImages([]);
     setBookmarks({});
+    setCoverPicks({});
     setCategories({});
     setVotes({});
     setSubmitted(new Set());
@@ -670,10 +711,10 @@ Reply with ONLY the category name, exactly as written above.`;
           </div>
         )}
         <main style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-          {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload}/>}
-          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizing={categorizing} categorizeProgress={categorizeProgress} runCategorization={runCategorization} refTypes={refTypes} setRefTypes={setRefTypes}/>}
-          {tab==="vote"&&<VoteTab images={collImages} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user}/>}
-          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt}/>}
+          {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload} myCover={myCover} onCover={toggleCover}/>}
+          {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizing={categorizing} categorizeProgress={categorizeProgress} runCategorization={runCategorization} refTypes={refTypes} setRefTypes={setRefTypes} myCover={myCover} onCover={toggleCover}/>}
+          {tab==="vote"&&<VoteTab images={collImages} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user} myCover={myCover} onCover={toggleCover}/>}
+          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt} allCover={allCover}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies} projectFile={projectFile} user={user}/>}
         </main>
       </div>
@@ -819,7 +860,7 @@ function ShortcutsTooltip() {
 }
 
 // ── BROWSE TAB ─────────────────────────────────────────────────
-function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
+function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
   const [mode, setMode] = useState("grid");
   const [numChunks, setNumChunks] = useState(3);
   const [chunkFilter, setChunkFilter] = useState(null);
@@ -925,6 +966,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
 
   const fsImg = flatImages[fsIdx];
   const fsBm = fsImg && myBm.has(fsImg.id);
+  const fsCover = fsImg && myCover.has(fsImg.id);
 
   return (
     <>
@@ -951,6 +993,9 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload }) {
           </div>
           <button className={fsBm?"ab":"pl"} onClick={()=>doAdvance(true)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",cursor:"pointer",width:"100%"}}>
             {fsBm?"bookmarked":"bookmark  [B]"}
+          </button>
+          <button className="pl" onClick={()=>onCover(fsImg.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",cursor:"pointer",width:"100%",...coverBtnStyle(fsCover)}}>
+            {fsCover?"✓ cover option":"add to cover options"}
           </button>
           <div style={{borderTop:"1px solid var(--bd)",paddingTop:14,fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",lineHeight:2.5}}>
             Space  next · B  bookmark + next<br/>Backspace  undo · Esc  back to grid
@@ -1106,7 +1151,7 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
 }
 
 // ── FULLSCREEN VIEWER ──────────────────────────────────────────
-function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
+function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote, myCover, onCover }) {
   const [idx, setIdx] = useState(startIdx);
   const imgsRef = useRef(images);
   useEffect(() => { imgsRef.current = images; }, [images]);
@@ -1125,6 +1170,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
   if (!img) return null;
   const bm = myBm?.has(img.id);
   const voted = myVotes?.has(img.id);
+  const cover = myCover?.has(img.id);
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",background:"var(--bg)"}}>
@@ -1149,6 +1195,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
         </div>
         {onBm&&<button className={bm?"ab":"pl"} onClick={()=>onBm(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{bm?"✓ bookmarked":"bookmark"}</button>}
         {onVote&&<button className={voted?"ab":"pl"} onClick={()=>onVote(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%"}}>{voted?"✓ voted":"vote"}</button>}
+        {onCover&&<button className="pl" onClick={()=>onCover(img.id)} style={{padding:"9px 0",fontSize:11,letterSpacing:".06em",textAlign:"center",width:"100%",...coverBtnStyle(cover)}}>{cover?"✓ cover option":"add to cover options"}</button>}
         <div style={{borderTop:"1px solid var(--bd)",paddingTop:14,fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",lineHeight:2.5}}>
           ← →  navigate<br/>Esc  close · click bg  close
         </div>
@@ -1158,7 +1205,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote }) {
 }
 
 // ── COLLECTION TAB ─────────────────────────────────────────────
-function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, toggleVotingOpen, categorizing, categorizeProgress, runCategorization, refTypes, setRefTypes }) {
+function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, toggleVotingOpen, categorizing, categorizeProgress, runCategorization, refTypes, setRefTypes, myCover, onCover }) {
   const [catFilter, setCatFilter] = useState(null);
   const [showRefsOnly, setShowRefsOnly] = useState(false);
   const [fsOpen, setFsOpen] = useState(false);
@@ -1175,7 +1222,7 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, my
 
   return (
     <>
-    {fsOpen&&<FSViewer images={filtered} startIdx={fsIdx} onClose={()=>setFsOpen(false)} myBm={myBm} onBm={onBm}/>}
+    {fsOpen&&<FSViewer images={filtered} startIdx={fsIdx} onClose={()=>setFsOpen(false)} myBm={myBm} onBm={onBm} myCover={myCover} onCover={onCover}/>}
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 50px)",overflow:"hidden"}}>
       <div style={{padding:"9px 18px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",gap:9,flexShrink:0,flexWrap:"wrap",background:"var(--sf2)"}}>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{collImages.length} bookmarked</span>
@@ -1225,7 +1272,7 @@ const VOTE_SORTS = {
   votes_asc: (a,b,vc) => vc(a.id)-vc(b.id),
 };
 
-function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, onBm, categories, votingOpen, submitted, onSubmit, user }) {
+function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, onBm, categories, votingOpen, submitted, onSubmit, user, myCover, onCover }) {
   const [showOthers, setShowOthers] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
   const [sortBy, setSortBy] = useState("date");
@@ -1247,7 +1294,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
 
   return (
     <>
-    {fsOpen&&<FSViewer images={filtered} startIdx={fsIdx} onClose={()=>setFsOpen(false)} myBm={myBm} onBm={onBm} myVotes={myVotes} onVote={toggleVote}/>}
+    {fsOpen&&<FSViewer images={filtered} startIdx={fsIdx} onClose={()=>setFsOpen(false)} myBm={myBm} onBm={onBm} myVotes={myVotes} onVote={toggleVote} myCover={myCover} onCover={onCover}/>}
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 50px)",overflow:"hidden"}}>
       <div style={{padding:"9px 18px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",gap:8,flexShrink:0,flexWrap:"wrap",background:"var(--sf2)"}}>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx)"}}>{myVoteCount} voted</span>
@@ -1288,8 +1335,9 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
 }
 
 // ── PAIR TAB ───────────────────────────────────────────────────
-function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user, processImagePrompt }) {
+function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user, processImagePrompt, allCover }) {
   const [catFilter, setCatFilter] = useState(null);
+  const [coverFilter, setCoverFilter] = useState(false);
   const [poolMode, setPoolMode] = useState("unpaired");
   const [pairingA, setPairingA] = useState(null);
   const [suggestion, setSuggestion] = useState(null);
@@ -1298,7 +1346,8 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
 
   const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
   const pool = poolMode==="all" ? sortedColl : unpairedPool;
-  const filteredPool = catFilter ? pool.filter(i=>categories[i.id]===catFilter) : pool;
+  let filteredPool = catFilter ? pool.filter(i=>categories[i.id]===catFilter) : pool;
+  if (coverFilter) filteredPool = filteredPool.filter(i=>allCover.has(i.id));
 
   const handleSel = img => {
     if (!pairingA) { setPairingA(img); setSuggestion(null); return; }
@@ -1374,6 +1423,8 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           {CATEGORIES.filter(c=>pool.some(i=>categories[i.id]===c)).map(c=>(
             <button key={c} className={`pl ${catFilter===c?"on":""}`} onClick={()=>setCatFilter(c)} style={{textTransform:"capitalize"}}>{c} <span style={{opacity:.4}}>{pool.filter(i=>categories[i.id]===c).length}</span></button>
           ))}
+          <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
+          <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{pool.filter(i=>allCover.has(i.id)).length}</span></button>
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
             {["S","M","L","XL"].map(s=>(
               <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
