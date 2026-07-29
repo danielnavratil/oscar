@@ -1550,14 +1550,15 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, onCategory, d
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>PAIR {i+1}</span>
         {(()=>{
           const cat = pairCategory(pair, categories);
-          if (onCategory && (pair.category || !cat)) return (
-            <select value={pair.category||""} onChange={e=>onCategory(pair.id,e.target.value)}
+          if (!onCategory) return cat ? <span style={{fontSize:8,color:"var(--tx2)",textTransform:"capitalize"}}>{cat}</span> : null;
+          const autoCat = pairCategory({...pair,category:null}, categories);
+          return (
+            <select value={cat||""} onChange={e=>onCategory(pair.id,e.target.value)}
               style={{...ss,fontSize:8,padding:"1px 2px",textTransform:"capitalize",color:cat?"var(--tx2)":"#d9822b",borderColor:cat?"var(--bd)":"#d9822b"}}>
-              <option value="">category?</option>
+              <option value="">{autoCat?"auto":"category?"}</option>
               {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
             </select>
           );
-          return cat ? <span style={{fontSize:8,color:"var(--tx2)",textTransform:"capitalize"}}>{cat}</span> : null;
         })()}
         <div style={{flex:1}}/>
         {del&&<button onClick={()=>del(pair.id)} style={{background:"none",border:"none",color:"var(--tx3)",cursor:"pointer",fontSize:15,lineHeight:1,padding:0}}>×</button>}
