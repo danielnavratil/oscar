@@ -1829,7 +1829,19 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
 
   const allPairIds = pairs.flatMap(p=>[p.a.id,p.b.id]);
   const processedCount = allPairIds.filter(id=>promptEdits?.[id]).length;
-  const flaggedCount = allPairIds.filter(id=>promptEdits?.[id]?.flagged).length;
+  const flaggedIds = sortedPairs.flatMap(p=>[p.a.id,p.b.id]).filter(id=>promptEdits?.[id]?.flagged);
+  const flaggedCount = flaggedIds.length;
+
+  const flagJumpIdx = useRef(0);
+  const [flagHighlight, setFlagHighlight] = useState(null);
+  const jumpToFlagged = () => {
+    if (!flaggedIds.length) return;
+    const id = flaggedIds[flagJumpIdx.current % flaggedIds.length];
+    flagJumpIdx.current++;
+    document.getElementById(`export-img-${id}`)?.scrollIntoView({behavior:"smooth",block:"center"});
+    setFlagHighlight(id);
+    setTimeout(()=>setFlagHighlight(h=>h===id?null:h),1500);
+  };
 
   const [scriptPath, setScriptPath] = useState(() => { try { return localStorage.getItem('oscar_pipeline_script') || ''; } catch { return ''; } });
   const [issueFolder, setIssueFolder] = useState(() => { try { return localStorage.getItem('oscar_pipeline_folder') || ''; } catch { return ''; } });
@@ -1894,7 +1906,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
               <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{processedCount}/{pairs.length*2} prompts ready</span>
             )}
             {flaggedCount>0&&(
-              <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>· {flaggedCount} flagged</span>
+              <span onClick={jumpToFlagged} title="jump to next flagged prompt" style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"#d97706",cursor:"pointer"}}>· {flaggedCount} flagged</span>
             )}
             <div style={{flex:1}}/>
             <button className="pl" onClick={onClean}>clean stored prompts</button>
@@ -1907,7 +1919,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
                 <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:12,textTransform:"capitalize"}}>pair {p.pair}{p.category?` · ${p.category}`:""}</div>
                 <div style={{display:"flex",gap:24}}>
                   {[p.imageA,p.imageB].map((img,idx)=>img&&(
-                    <div key={idx} style={{width:200,flexShrink:0}}>
+                    <div key={idx} id={`export-img-${img.id}`} style={{width:200,flexShrink:0,outline:flagHighlight===img.id?"1px solid #d97706":"none",outlineOffset:4}}>
                       <img src={img.thumbnailUrl} alt="" loading="lazy"
                         style={{width:200,height:"auto",display:"block"}}
                         onError={e=>e.target.style.opacity=".2"}/>
