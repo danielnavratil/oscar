@@ -88,6 +88,7 @@ create table if not exists pairs (
   size_b text default 'full bleed',
   creator text,
   type text default 'confirmed',  -- 'confirmed' or 'proposal'
+  category text,                  -- manual override for export ordering
   created_at timestamptz default now()
 );
 create index if not exists pairs_issue_idx on pairs(issue_id);

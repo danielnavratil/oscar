@@ -6,6 +6,17 @@ import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookm
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
+// Effective category of a pair: manual override wins; otherwise image A's
+// category when image B agrees (or has none). null = needs a manual choice.
+const pairCategory = (pair, categories) => {
+  if (pair.category) return pair.category;
+  const a = categories[pair.a.id], b = categories[pair.b.id];
+  return a && (!b || b === a) ? a : null;
+};
+const pairCatRank = (pair, categories) => {
+  const i = CATEGORIES.indexOf(pairCategory(pair, categories));
+  return i === -1 ? Infinity : i;
+};
 const MAX_CATEGORIZE = 1000;
 const TEAM = ["Daniel","Hongrae","Chase"];
 const COLORS = { Daniel:"#4d8fcc", Hongrae:"#e87a3a", Chase:"#6aaa6a" };
@@ -1386,6 +1397,10 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     setPairs(p=>p.map(x=>x.id===pid?{...x,[k]:{...x[k],[f]:v}}:x));
     dbUpdatePair(pid, { [`${f}_${k}`]: v }).catch(err => console.error("Failed to update pair:", err));
   };
+  const setPairCat = (pid,cat) => {
+    setPairs(p=>p.map(x=>x.id===pid?{...x,category:cat||null}:x));
+    dbUpdatePair(pid, { category: cat||null }).catch(err => console.error("Failed to update pair:", err));
+  };
   const swapPair = pid => {
     setPairs(p=>{
       const pair = p.find(x=>x.id===pid);
@@ -1406,10 +1421,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const getImg = id => images.find(i=>i.id===id);
   const confirmedPairs = pairs
     .filter(p=>p.type==="confirmed")
-    .sort((a,b)=>{
-      const rank = id => { const i = CATEGORIES.indexOf(categories[id]); return i===-1 ? Infinity : i; };
-      return rank(a.a.id) - rank(b.a.id);
-    });
+    .sort((a,b)=>pairCatRank(a,categories)-pairCatRank(b,categories));
   const proposals = pairs.filter(p=>p.type==="proposal");
 
   return (
@@ -1461,7 +1473,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
       <div style={{width:400,overflowY:"auto",padding:"13px 13px 40px",flexShrink:0}}>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",marginBottom:12}}>CONFIRMED · {confirmedPairs.length}</div>
         {!confirmedPairs.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:16,marginBottom:20}}>select from unpaired pool to pair</div>}
-        {confirmedPairs.map((pair,i)=><PairCard key={pair.id} pair={pair} i={i} getImg={getImg} upd={upd} del={del} onSwap={swapPair} categories={categories}/>)}
+        {confirmedPairs.map((pair,i)=><PairCard key={pair.id} pair={pair} i={i} getImg={getImg} upd={upd} del={del} onSwap={swapPair} categories={categories} onCategory={setPairCat}/>)}
         {proposals.length>0&&(
           <>
             <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",margin:"20px 0 10px"}}>PROPOSALS · {proposals.length}</div>
@@ -1484,7 +1496,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   );
 }
 
-function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
+function PairCard({ pair, i, getImg, upd, del, onSwap, categories, onCategory, dim }) {
   const iA=getImg(pair.a.id), iB=getImg(pair.b.id);
   const [drag, setDrag] = useState(null);
   const [settling, setSettling] = useState(null); // {key} — animating to destination before commit
@@ -1498,7 +1510,17 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, dim }) {
     <div className="pc" style={{opacity:dim ? 0.8 : 1}}>
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>PAIR {i+1}</span>
-        {categories[pair.a.id]&&<span style={{fontSize:8,color:"var(--tx2)",textTransform:"capitalize"}}>{categories[pair.a.id]}</span>}
+        {(()=>{
+          const cat = pairCategory(pair, categories);
+          if (onCategory && (pair.category || !cat)) return (
+            <select value={pair.category||""} onChange={e=>onCategory(pair.id,e.target.value)}
+              style={{...ss,fontSize:8,padding:"1px 2px",textTransform:"capitalize",color:cat?"var(--tx2)":"#d9822b",borderColor:cat?"var(--bd)":"#d9822b"}}>
+              <option value="">category?</option>
+              {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          );
+          return cat ? <span style={{fontSize:8,color:"var(--tx2)",textTransform:"capitalize"}}>{cat}</span> : null;
+        })()}
         <div style={{flex:1}}/>
         {del&&<button onClick={()=>del(pair.id)} style={{background:"none",border:"none",color:"var(--tx3)",cursor:"pointer",fontSize:15,lineHeight:1,padding:0}}>×</button>}
       </div>
@@ -1731,7 +1753,9 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
     return cleanPrompt(img.prompt, refTypes[img.id]);
   };
 
-  const pairData = pairs.map((p,i)=>{
+  const sortedPairs = [...pairs].sort((a,b)=>pairCatRank(a,categories)-pairCatRank(b,categories));
+  const uncatPairCount = sortedPairs.filter(p=>!pairCategory(p,categories)).length;
+  const pairData = sortedPairs.map((p,i)=>{
     const fmt = (img,side,size) => img ? {
       id:img.id, username:img.user_name,
       thumbnailUrl:imgUrl(img), aspect:img.aspect,
@@ -1744,7 +1768,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
       side, size, votes:vc(img.id)
     } : null;
     const iA=getImg(p.a.id), iB=getImg(p.b.id);
-    return { pair:i+1, imageA:fmt(iA,p.a.side,p.a.size), imageB:fmt(iB,p.b.side,p.b.size) };
+    return { pair:i+1, category:pairCategory(p,categories), imageA:fmt(iA,p.a.side,p.a.size), imageB:fmt(iB,p.b.side,p.b.size) };
   });
 
   const allPairIds = pairs.flatMap(p=>[p.a.id,p.b.id]);
@@ -1802,8 +1826,9 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:28,padding:"16px 18px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
             <button className="ab" onClick={()=>downloadJson(pairData,pairsFilename)} disabled={!pairs.length}>Download pairs JSON</button>
             <div>
-              <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images</div>
+              <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:"var(--tx2)"}}>{pairs.length} confirmed pairs · {pairs.length*2} images · category order</div>
               <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",marginTop:3}}>cleaned prompts · ref types · categories · L/R · size · mj links</div>
+              {uncatPairCount>0&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"#d9822b",marginTop:3}}>{uncatPairCount} pair{uncatPairCount>1?"s":""} without category — choose one in the pair tab (sorted last)</div>}
             </div>
           </div>
 
@@ -1823,7 +1848,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {pairData.map(p=>(
               <div key={p.pair} style={{padding:"14px 16px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
-                <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:12}}>pair {p.pair}</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:12,textTransform:"capitalize"}}>pair {p.pair}{p.category?` · ${p.category}`:""}</div>
                 <div style={{display:"flex",gap:24}}>
                   {[p.imageA,p.imageB].map((img,idx)=>img&&(
                     <div key={idx} style={{width:200,flexShrink:0}}>
