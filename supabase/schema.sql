@@ -89,6 +89,7 @@ create table if not exists pairs (
   creator text,
   type text default 'confirmed',  -- 'confirmed' or 'proposal'
   category text,                  -- manual override for export ordering
+  position double precision,      -- manual sort position within category
   created_at timestamptz default now()
 );
 create index if not exists pairs_issue_idx on pairs(issue_id);

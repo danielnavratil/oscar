@@ -320,6 +320,7 @@ export async function loadPairs() {
     creator: p.creator,
     type: p.type,
     category: p.category ?? null,
+    position: p.position ?? null,
   }));
 }
 
@@ -348,7 +349,7 @@ export async function createPair(pair: {
 export async function updatePair(pairId: string, updates: {
   image_a_id?: string; side_a?: string; size_a?: string;
   image_b_id?: string; side_b?: string; size_b?: string;
-  type?: string; category?: string | null;
+  type?: string; category?: string | null; position?: number;
 }) {
   const { error } = await supabase
     .from('pairs')

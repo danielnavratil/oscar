@@ -17,6 +17,11 @@ const pairCatRank = (pair, categories) => {
   const i = CATEGORIES.indexOf(pairCategory(pair, categories));
   return i === -1 ? Infinity : i;
 };
+// Category order first, then drag-set position (never-dragged pairs keep
+// created order after any positioned ones in the same category).
+const pairSortCmp = categories => (a,b) =>
+  pairCatRank(a,categories)-pairCatRank(b,categories)
+  || (a.position??Infinity)-(b.position??Infinity);
 const MAX_CATEGORIZE = 1000;
 const TEAM = ["Daniel","Hongrae","Chase"];
 const COLORS = { Daniel:"#4d8fcc", Hongrae:"#e87a3a", Chase:"#6aaa6a" };
@@ -1354,6 +1359,9 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const [suggestion, setSuggestion] = useState(null);
   const [suggesting, setSuggesting] = useState(null);
   const [colSize, setColSize] = useState("M");
+  const [dragPid, setDragPid] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null); // {idx, after}
+  const dragArmedRef = useRef(false); // drag only starts from the ⠿ handle
 
   const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
   const pool = poolMode==="all" ? sortedColl : unpairedPool;
@@ -1401,6 +1409,22 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     setPairs(p=>p.map(x=>x.id===pid?{...x,category:cat||null}:x));
     dbUpdatePair(pid, { category: cat||null }).catch(err => console.error("Failed to update pair:", err));
   };
+  // Move pid before/after the pair at tgt.idx (indices into confirmedPairs),
+  // then renumber every confirmed pair to its visual index and persist changes.
+  const applyReorder = (pid,tgt) => {
+    const ids = confirmedPairs.map(p=>p.id);
+    const from = ids.indexOf(pid);
+    if (from===-1) return;
+    ids.splice(from,1);
+    let ins = tgt.idx + (tgt.after?1:0);
+    if (from < ins) ins -= 1;
+    ids.splice(ins,0,pid);
+    const pos = Object.fromEntries(ids.map((id,i)=>[id,i]));
+    confirmedPairs.forEach(p=>{
+      if (pos[p.id]!==p.position) dbUpdatePair(p.id,{position:pos[p.id]}).catch(err=>console.error("Failed to reorder pair:",err));
+    });
+    setPairs(p=>p.map(x=>pos[x.id]!=null&&pos[x.id]!==x.position?{...x,position:pos[x.id]}:x));
+  };
   const swapPair = pid => {
     setPairs(p=>{
       const pair = p.find(x=>x.id===pid);
@@ -1421,7 +1445,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const getImg = id => images.find(i=>i.id===id);
   const confirmedPairs = pairs
     .filter(p=>p.type==="confirmed")
-    .sort((a,b)=>pairCatRank(a,categories)-pairCatRank(b,categories));
+    .sort(pairSortCmp(categories));
   const proposals = pairs.filter(p=>p.type==="proposal");
 
   return (
@@ -1473,7 +1497,20 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
       <div style={{width:400,overflowY:"auto",padding:"13px 13px 40px",flexShrink:0}}>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",marginBottom:12}}>CONFIRMED · {confirmedPairs.length}</div>
         {!confirmedPairs.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:16,marginBottom:20}}>select from unpaired pool to pair</div>}
-        {confirmedPairs.map((pair,i)=><PairCard key={pair.id} pair={pair} i={i} getImg={getImg} upd={upd} del={del} onSwap={swapPair} categories={categories} onCategory={setPairCat}/>)}
+        {confirmedPairs.map((pair,i)=>(
+          <div key={pair.id}
+            draggable
+            onDragStart={e=>{ if(!dragArmedRef.current){e.preventDefault();return;} setDragPid(pair.id); e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",pair.id); }}
+            onDragEnd={()=>{ dragArmedRef.current=false; setDragPid(null); setDropTarget(null); }}
+            onDragOver={e=>{ if(!dragPid||dragPid===pair.id) return; e.preventDefault(); const r=e.currentTarget.getBoundingClientRect(); setDropTarget({idx:i, after:e.clientY>r.top+r.height/2}); }}
+            onDrop={e=>{ e.preventDefault(); if(dragPid&&dropTarget) applyReorder(dragPid,dropTarget); setDragPid(null); setDropTarget(null); }}
+            onMouseUp={()=>{ dragArmedRef.current=false; }}
+            style={{position:"relative",opacity:dragPid===pair.id?0.35:1}}
+          >
+            {dropTarget?.idx===i&&<div style={{position:"absolute",left:0,right:0,[dropTarget.after?"bottom":"top"]:-2,height:2,background:"var(--tx)",zIndex:2,pointerEvents:"none"}}/>}
+            <PairCard pair={pair} i={i} getImg={getImg} upd={upd} del={del} onSwap={swapPair} categories={categories} onCategory={setPairCat} dragHandleProps={{onMouseDown:()=>{dragArmedRef.current=true;}}}/>
+          </div>
+        ))}
         {proposals.length>0&&(
           <>
             <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",margin:"20px 0 10px"}}>PROPOSALS · {proposals.length}</div>
@@ -1496,7 +1533,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   );
 }
 
-function PairCard({ pair, i, getImg, upd, del, onSwap, categories, onCategory, dim }) {
+function PairCard({ pair, i, getImg, upd, del, onSwap, categories, onCategory, dragHandleProps, dim }) {
   const iA=getImg(pair.a.id), iB=getImg(pair.b.id);
   const [drag, setDrag] = useState(null);
   const [settling, setSettling] = useState(null); // {key} — animating to destination before commit
@@ -1509,6 +1546,7 @@ function PairCard({ pair, i, getImg, upd, del, onSwap, categories, onCategory, d
   return (
     <div className="pc" style={{opacity:dim ? 0.8 : 1}}>
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
+        {dragHandleProps&&<span {...dragHandleProps} title="drag to reorder" style={{cursor:"grab",color:"var(--tx3)",fontSize:11,lineHeight:1,userSelect:"none"}}>⠿</span>}
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>PAIR {i+1}</span>
         {(()=>{
           const cat = pairCategory(pair, categories);
@@ -1753,7 +1791,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
     return cleanPrompt(img.prompt, refTypes[img.id]);
   };
 
-  const sortedPairs = [...pairs].sort((a,b)=>pairCatRank(a,categories)-pairCatRank(b,categories));
+  const sortedPairs = [...pairs].sort(pairSortCmp(categories));
   const uncatPairCount = sortedPairs.filter(p=>!pairCategory(p,categories)).length;
   const pairData = sortedPairs.map((p,i)=>{
     const fmt = (img,side,size) => img ? {
