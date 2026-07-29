@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, createContext, useContext } from "react";
 import JSZip from "jszip";
 import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, loadCoverPicks, addCoverPick, removeCoverPick, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject, upsertIssue } from "@/lib/db";
 
@@ -1362,6 +1362,9 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const [dragPid, setDragPid] = useState(null);
   const [dropTarget, setDropTarget] = useState(null); // {idx, after}
   const dragArmedRef = useRef(false); // drag only starts from the ⠿ handle
+  const listRef = useRef(null);      // confirmed-list scroll container
+  const cardRefs = useRef({});       // pair id → card wrapper DOM node
+  const scrollAnchorRef = useRef(null); // {id, top} — keep this card visually still across a re-sort
 
   const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
   const pool = poolMode==="all" ? sortedColl : unpairedPool;
@@ -1406,9 +1409,22 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     dbUpdatePair(pid, { [`${f}_${k}`]: v }).catch(err => console.error("Failed to update pair:", err));
   };
   const setPairCat = (pid,cat) => {
+    // The pair re-sorts to its category's spot; anchor the scroll on the next
+    // card so the view stays on the pairs still awaiting a category.
+    const idx = confirmedPairs.findIndex(p=>p.id===pid);
+    const anchor = confirmedPairs[idx+1] || confirmedPairs[idx-1];
+    const el = anchor && cardRefs.current[anchor.id];
+    if (el) scrollAnchorRef.current = { id: anchor.id, top: el.getBoundingClientRect().top };
     setPairs(p=>p.map(x=>x.id===pid?{...x,category:cat||null}:x));
     dbUpdatePair(pid, { category: cat||null }).catch(err => console.error("Failed to update pair:", err));
   };
+  useLayoutEffect(() => {
+    const a = scrollAnchorRef.current;
+    if (!a) return;
+    scrollAnchorRef.current = null;
+    const el = cardRefs.current[a.id], list = listRef.current;
+    if (el && list) list.scrollTop += el.getBoundingClientRect().top - a.top;
+  }, [pairs]);
   // Move pid before/after the pair at tgt.idx (indices into confirmedPairs),
   // then renumber every confirmed pair to its visual index and persist changes.
   const applyReorder = (pid,tgt) => {
@@ -1494,11 +1510,12 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           <div style={{padding:"5px 8px",fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>@{pairingA.user_name} · click another to pair</div>
         </div>
       )}
-      <div style={{width:400,overflowY:"auto",padding:"13px 13px 40px",flexShrink:0}}>
+      <div ref={listRef} style={{width:400,overflowY:"auto",padding:"13px 13px 40px",flexShrink:0}}>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",marginBottom:12}}>CONFIRMED · {confirmedPairs.length}</div>
         {!confirmedPairs.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:16,marginBottom:20}}>select from unpaired pool to pair</div>}
         {confirmedPairs.map((pair,i)=>(
           <div key={pair.id}
+            ref={el=>{ if(el) cardRefs.current[pair.id]=el; else delete cardRefs.current[pair.id]; }}
             draggable
             onDragStart={e=>{ if(!dragArmedRef.current){e.preventDefault();return;} setDragPid(pair.id); e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",pair.id); }}
             onDragEnd={()=>{ dragArmedRef.current=false; setDragPid(null); setDropTarget(null); }}
