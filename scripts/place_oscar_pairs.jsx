@@ -51,6 +51,7 @@ function placeOscarPairs() {
     var imagesFolder = Folder.selectDialog("Select folder of CMYK JPEGs (filenames are UUIDs)");
     if (!imagesFolder) return;
 
+    jsonFile.encoding = "UTF-8";
     jsonFile.open("r"); var jsonText = jsonFile.read(); jsonFile.close();
     var pairs;
     // ExtendScript lacks JSON.parse; eval is safe here (our own export).
