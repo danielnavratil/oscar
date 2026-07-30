@@ -121,6 +121,16 @@ function placeQrCodes() {
                 errors.push(ent.user + ": placeholder image not found in duplicated group");
                 continue;
             }
+
+            // if the group crosses the bottom margin, bump prompt + QR up together
+            // by just the overshoot (prompts moved by hand can sit high enough to fit)
+            var page   = tf.parentPage;
+            var limit  = page.bounds[2] - page.marginPreferences.bottom;
+            var over   = dup.visibleBounds[2] - limit;
+            if (over > 0) {
+                tf.move(undefined, [0, -over]);
+                dup.move(undefined, [0, -over]);
+            }
             placed++;
         } catch (err) {
             errors.push(ent.user + ": " + err.message);
