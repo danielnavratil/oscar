@@ -20,7 +20,6 @@ function placeOscarPairs() {
     var PROMPT_W        = 3.5;
     var PROMPT_H        = 2.0;
     var GAP             = 0.1667;      // gap between side-by-side prompts
-    var DISPLACE_AT     = PROMPT_TOP;   // displace only when image actually overlaps prompt area
 
     // Derived
     var TOP_BLEED       = -BLEED;
@@ -37,6 +36,8 @@ function placeOscarPairs() {
     var PAGE_ASPECT     = PAGE_BLEED_W / PAGE_BLEED_H; // ≈0.764
     var PROMPT_TOP      = 8.375;
     var PROMPT_BOTTOM   = PROMPT_TOP + PROMPT_H;     // 10.375
+    var DISPLACE_AT     = PROMPT_TOP;  // displace only when image actually overlaps prompt area
+                                       // (must be defined AFTER PROMPT_TOP — var hoisting made this undefined before)
 
     // ── PRECONDITIONS ──────────────────────────────────────────
     if (app.documents.length === 0) {
@@ -210,7 +211,9 @@ function placeOscarPairs() {
             geometricBounds: [bounds.top, bounds.left, bounds.bottom, bounds.right]
         });
         tf.textFramePreferences.autoSizingType = AutoSizingTypeEnum.HEIGHT_ONLY;
-        tf.textFramePreferences.autoSizingReferencePoint = AutoSizingReferenceEnum.TOP_LEFT_POINT;
+        // anchor at the bottom: frames grow upward, so every prompt's bottom edge stays on PROMPT_BOTTOM
+        tf.textFramePreferences.autoSizingReferencePoint = AutoSizingReferenceEnum.BOTTOM_LEFT_POINT;
+        tf.textFramePreferences.verticalJustification = VerticalJustification.BOTTOM_ALIGN;
         var bodyText = (body || "").replace(/\n/g, "\r");
         tf.contents = (username || "").replace(/^@+/, "") + "\r" + bodyText;
         // style via the story, not the frame: tf.paragraphs misses overset text,
