@@ -213,18 +213,21 @@ function placeOscarPairs() {
         tf.textFramePreferences.autoSizingReferencePoint = AutoSizingReferenceEnum.TOP_LEFT_POINT;
         var bodyText = (body || "").replace(/\n/g, "\r");
         tf.contents = (username || "").replace(/^@+/, "") + "\r" + bodyText;
-        if (tf.paragraphs.length > 0) {
-            tf.paragraphs[0].appliedFont   = fontHeavy;
-            tf.paragraphs[0].pointSize     = 10;
-            tf.paragraphs[0].leading       = 16;
-            tf.paragraphs[0].justification = Justification.LEFT_ALIGN;
+        // style via the story, not the frame: tf.paragraphs misses overset text,
+        // which left the tail of long prompts in the default font
+        var paras = tf.parentStory.paragraphs;
+        if (paras.length > 0) {
+            paras[0].appliedFont   = fontHeavy;
+            paras[0].pointSize     = 10;
+            paras[0].leading       = 16;
+            paras[0].justification = Justification.LEFT_ALIGN;
         }
-        for (var pi = 1; pi < tf.paragraphs.length; pi++) {
-            tf.paragraphs[pi].appliedFont   = fontRegular;
-            tf.paragraphs[pi].pointSize     = 9;
-            tf.paragraphs[pi].leading       = 10.8;
-            tf.paragraphs[pi].justification = Justification.LEFT_ALIGN;
-            tf.paragraphs[pi].hyphenation   = false;
+        for (var pi = 1; pi < paras.length; pi++) {
+            paras[pi].appliedFont   = fontRegular;
+            paras[pi].pointSize     = 9;
+            paras[pi].leading       = 10.8;
+            paras[pi].justification = Justification.LEFT_ALIGN;
+            paras[pi].hyphenation   = false;
         }
         return tf;
     }
