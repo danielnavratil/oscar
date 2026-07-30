@@ -436,7 +436,7 @@ export default function App() {
           signal: controller.signal,
           body: JSON.stringify({
             model: "claude-haiku-4-5-20251001",
-            max_tokens: 400,
+            max_tokens: 1000,
             system: [{ type: "text", text: COPY_EDIT_SYSTEM, cache_control: { type: "ephemeral" } }],
             messages: [{ role: "user", content: mechBody }]
           })
@@ -452,7 +452,14 @@ export default function App() {
         claudeBody = (parsed.body || mechBody).toLowerCase().trim();
         flagged = !!parsed.flagged;
         flagReason = parsed.flag_reason || null;
-      } catch { claudeBody = text.toLowerCase().trim(); }
+      } catch {
+        if (data.stop_reason === "max_tokens" || text.startsWith("{") || text.startsWith("```")) {
+          // truncated or malformed JSON — keep the mechanical clean rather than storing broken JSON
+          flagged = true; flagReason = "claude response truncated/unparseable — using mechanical clean";
+        } else {
+          claudeBody = text.toLowerCase().trim();
+        }
+      }
       const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason };
       await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
       setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
@@ -1679,7 +1686,11 @@ function extractPromptBody(text) {
     const m = stripped.match(/\{[\s\S]*\}/);
     const parsed = JSON.parse(m ? m[0] : stripped);
     if (parsed.body) return parsed.body;
-  } catch {}
+  } catch {
+    // truncated/malformed JSON (e.g. response cut at max_tokens): salvage the body value
+    const bm = stripped.match(/"body"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (bm) { try { return JSON.parse(`"${bm[1]}"`); } catch {} }
+  }
   return stripped;
 }
 

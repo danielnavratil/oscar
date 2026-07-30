@@ -429,6 +429,22 @@ export async function updatePromptEditBody(imageId: string, editedBody: string) 
   if (error) throw error;
 }
 
+// Pull the body out of a claude_body that is JSON (possibly fenced), even when the
+// JSON is truncated/malformed (e.g. response cut at max_tokens). Null if not JSON-wrapped.
+function extractBodyLenient(claudeBody: string | null): string | null {
+  const stripped = claudeBody?.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
+  if (!stripped) return null;
+  try {
+    const m = stripped.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(m ? m[0] : stripped);
+    return parsed.body || null;
+  } catch {
+    const bm = stripped.match(/"body"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (bm) { try { return JSON.parse(`"${bm[1]}"`); } catch {} }
+    return null;
+  }
+}
+
 export async function cleanPromptEditBodies(): Promise<number> {
   const { data, error } = await supabase
     .from('prompt_edits')
@@ -436,22 +452,14 @@ export async function cleanPromptEditBodies(): Promise<number> {
     .eq('issue_id', ISSUE_ID);
   if (error) throw error;
 
-  const dirty = (data ?? []).filter(r => {
-    const stripped = r.claude_body?.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
-    try {
-      const m = stripped?.match(/\{[\s\S]*\}/);
-      const parsed = JSON.parse(m ? m[0] : stripped);
-      return !!parsed.body;
-    } catch { return false; }
-  });
+  const dirty = (data ?? [])
+    .map(r => ({ image_id: r.image_id, body: extractBodyLenient(r.claude_body) }))
+    .filter(r => r.body !== null);
 
   for (const row of dirty) {
-    const stripped = row.claude_body.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
-    const m = stripped.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(m ? m[0] : stripped);
     const { error: updateError } = await supabase
       .from('prompt_edits')
-      .update({ claude_body: parsed.body, updated_at: new Date().toISOString() })
+      .update({ claude_body: row.body, updated_at: new Date().toISOString() })
       .eq('image_id', row.image_id)
       .eq('issue_id', ISSUE_ID);
     if (updateError) throw updateError;
