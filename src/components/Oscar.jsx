@@ -126,6 +126,10 @@ function mechClean(rawPrompt) {
   return { body, params: paramLine };
 }
 
+// CJK, Hangul, Cyrillic, Arabic, Hebrew, Thai, Devanagari — prompts in these scripts
+// keep their original text (no Claude copy-edit, which would translate or refuse)
+const NON_LATIN_RE = /[Ѐ-ӿ֐-׿؀-ۿऀ-ॿ฀-๿ᄀ-ᇿ぀-ヿ㄰-㆏一-鿿가-힯豈-﫿]/;
+
 function claudeErrorMessage(status, data) {
   const type = data?.error?.type;
   if (status === 429 || type === 'rate_limit_error')
@@ -427,6 +431,12 @@ export default function App() {
     try {
       const { body: mechBody, params } = mechClean(img.prompt);
       if (!mechBody) return;
+      if (NON_LATIN_RE.test(mechBody)) {
+        const edit = { imageId: img.id, claudeBody: mechBody, editedBody: null, params, flagged: true, flagReason: "non-english prompt — original text kept" };
+        await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
+        setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
+        return;
+      }
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
       let res;
