@@ -1829,19 +1829,11 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
 
   const allPairIds = pairs.flatMap(p=>[p.a.id,p.b.id]);
   const processedCount = allPairIds.filter(id=>promptEdits?.[id]).length;
-  const flaggedIds = sortedPairs.flatMap(p=>[p.a.id,p.b.id]).filter(id=>promptEdits?.[id]?.flagged);
-  const flaggedCount = flaggedIds.length;
-
-  const flagJumpIdx = useRef(0);
-  const [flagHighlight, setFlagHighlight] = useState(null);
-  const jumpToFlagged = () => {
-    if (!flaggedIds.length) return;
-    const id = flaggedIds[flagJumpIdx.current % flaggedIds.length];
-    flagJumpIdx.current++;
-    document.getElementById(`export-img-${id}`)?.scrollIntoView({behavior:"smooth",block:"center"});
-    setFlagHighlight(id);
-    setTimeout(()=>setFlagHighlight(h=>h===id?null:h),1500);
-  };
+  const flaggedCount = allPairIds.filter(id=>promptEdits?.[id]?.flagged).length;
+  const [flagFilter, setFlagFilter] = useState(false);
+  const visiblePairs = flagFilter && flaggedCount>0
+    ? pairData.filter(p=>[p.imageA,p.imageB].some(img=>img&&promptEdits?.[img.id]?.flagged))
+    : pairData;
 
   const [scriptPath, setScriptPath] = useState(() => { try { return localStorage.getItem('oscar_pipeline_script') || ''; } catch { return ''; } });
   const [issueFolder, setIssueFolder] = useState(() => { try { return localStorage.getItem('oscar_pipeline_folder') || ''; } catch { return ''; } });
@@ -1906,7 +1898,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
               <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>{processedCount}/{pairs.length*2} prompts ready</span>
             )}
             {flaggedCount>0&&(
-              <span onClick={jumpToFlagged} title="jump to next flagged prompt" style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"#d97706",cursor:"pointer"}}>· {flaggedCount} flagged</span>
+              <span onClick={()=>setFlagFilter(f=>!f)} title={flagFilter?"show all pairs":"show only flagged pairs"} style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"#d97706",cursor:"pointer",textDecoration:flagFilter?"underline":"none"}}>· {flaggedCount} flagged</span>
             )}
             <div style={{flex:1}}/>
             <button className="pl" onClick={onClean}>clean stored prompts</button>
@@ -1914,15 +1906,20 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
           </div>
 
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {pairData.map(p=>(
+            {visiblePairs.map(p=>(
               <div key={p.pair} style={{padding:"14px 16px",background:"var(--sf)",border:"1px solid var(--bd)"}}>
                 <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)",marginBottom:12,textTransform:"capitalize"}}>pair {p.pair}{p.category?` · ${p.category}`:""}</div>
                 <div style={{display:"flex",gap:24}}>
                   {[p.imageA,p.imageB].map((img,idx)=>img&&(
-                    <div key={idx} id={`export-img-${img.id}`} style={{width:200,flexShrink:0,outline:flagHighlight===img.id?"1px solid #d97706":"none",outlineOffset:4}}>
-                      <img src={img.thumbnailUrl} alt="" loading="lazy"
-                        style={{width:200,height:"auto",display:"block"}}
-                        onError={e=>e.target.style.opacity=".2"}/>
+                    <div key={idx} style={{width:200,flexShrink:0}}>
+                      <div style={{position:"relative"}}>
+                        <img src={img.thumbnailUrl} alt="" loading="lazy"
+                          style={{width:200,height:"auto",display:"block"}}
+                          onError={e=>e.target.style.opacity=".2"}/>
+                        {promptEdits?.[img.id]?.flagged&&(
+                          <div style={{position:"absolute",top:8,right:8,width:12,height:12,background:"#d97706"}} title={promptEdits[img.id].flagReason||"flagged for review"}/>
+                        )}
+                      </div>
                       <div style={{height:15}}/>
                       <div style={{fontSize:9,color:"var(--tx)",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",marginBottom:2}}>{img.side} · {img.size}</div>
                       <div style={{fontSize:9,color:"var(--tx2)",fontFamily:"'DM Mono',monospace"}}>@{img.username}</div>
@@ -1933,7 +1930,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
                 </div>
               </div>
             ))}
-            {!pairData.length&&<div style={{fontSize:11,color:"var(--tx3)",textAlign:"center",padding:"40px 0"}}>create confirmed pairs first</div>}
+            {!visiblePairs.length&&<div style={{fontSize:11,color:"var(--tx3)",textAlign:"center",padding:"40px 0"}}>create confirmed pairs first</div>}
           </div>
         </div>
 
