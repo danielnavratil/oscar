@@ -431,8 +431,10 @@ export default function App() {
     try {
       const { body: mechBody, params } = mechClean(img.prompt);
       if (!mechBody) return;
+      const noModel = !/(^|\s)--(v|niji)\b/.test(params);
+      const addNoModel = reason => noModel ? (reason ? `${reason}; no model version in prompt` : "no model version in prompt") : reason;
       if (NON_LATIN_RE.test(mechBody)) {
-        const edit = { imageId: img.id, claudeBody: mechBody, editedBody: null, params, flagged: true, flagReason: "non-english prompt — original text kept" };
+        const edit = { imageId: img.id, claudeBody: mechBody, editedBody: null, params, flagged: true, flagReason: addNoModel("non-english prompt — original text kept") };
         await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
         setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
         return;
@@ -470,7 +472,8 @@ export default function App() {
           claudeBody = text.toLowerCase().trim();
         }
       }
-      const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason };
+      if (noModel) flagged = true;
+      const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason: addNoModel(flagReason) };
       await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
       setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
     } catch (e) {
