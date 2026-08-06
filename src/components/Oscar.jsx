@@ -835,7 +835,7 @@ function ProjectPicker({ initialUser, onEnter, dark, onToggleDark }) {
           ))}
         </div>
 
-        {selectedUser === 'Daniel' && (
+        {selectedUser && (
           <div style={{marginTop:14}}>
             {!addingProject ? (
               <button onClick={()=>setAddingProject(true)} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".08em",textDecoration:"underline",textUnderlineOffset:3,padding:0}}>+ add project</button>
