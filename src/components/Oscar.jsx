@@ -65,6 +65,19 @@ const downloadImage = async (img) => {
 };
 const COL_COUNTS = {S:10, M:7, L:5, XL:3};
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
+// URL-based references only — URLs are stripped from the printed prompt, so the
+// tag line is the reader's only signal. Numeric --sref codes stay visible in params.
+// Pluralized by URL count: "Image Prompts + Style Reference".
+const detectRefTypes = p => {
+  const s = p||"", t = [];
+  const lead = (s.match(/^\s*(?:https?:\/\/\S+\s+)+/)||[""])[0].match(/https?:\/\//g);
+  if (lead) t.push(lead.length > 1 ? "Image Prompts" : "Image Prompt");
+  for (const [flag, name] of [["sref","Style Reference"],["cref","Character Reference"],["oref","Omni Reference"]]) {
+    const m = s.match(new RegExp(`--${flag}((?:\\s+https?:\\/\\/\\S+)+)`));
+    if (m) t.push(m[1].match(/https?:\/\//g).length > 1 ? name + "s" : name);
+  }
+  return t;
+};
 const toBase64 = async (url) => {
   const res = await fetch(url);
   const blob = await res.blob();
@@ -104,7 +117,7 @@ function cleanPrompt(prompt, refTypeList) {
   const vParam = filtered.find(x=>x.startsWith("--v"));
   const rest = filtered.filter(x=>!x.startsWith("--v"));
   const paramLine = [vParam,...rest].filter(Boolean).join(" ");
-  const refLine = refTypeList?.length ? refTypeList.map(t=>`[${t}]`).join(" ") : "";
+  const refLine = refTypeList?.length ? refTypeList.join(" + ") : "";
   return [p,refLine,paramLine].filter(Boolean).join("\n");
 }
 
@@ -1824,13 +1837,16 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
     .sort((a,b)=>b.votes-a.votes);
   const votedImages = bookmarkedImages.filter(i=>i.votes>0);
 
+  // manual tags from the Collection tab win; otherwise detect from prompt syntax
+  const getRefList = (img) => refTypes[img.id]?.length ? refTypes[img.id] : detectRefTypes(img.prompt);
   const getCleanedPrompt = (img) => {
     const edit = promptEdits?.[img.id];
     if (edit) {
       const body = edit.editedBody ?? extractPromptBody(edit.claudeBody);
-      return edit.params ? `${body}\n${edit.params}` : body;
+      const refLine = getRefList(img).join(" + ");
+      return [body, refLine, edit.params].filter(Boolean).join("\n");
     }
-    return cleanPrompt(img.prompt, refTypes[img.id]);
+    return cleanPrompt(img.prompt, getRefList(img));
   };
 
   const sortedPairs = [...pairs].sort(pairSortCmp(categories));
@@ -1842,7 +1858,7 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
       cleanedPrompt:getCleanedPrompt(img),
       rawPrompt:img.prompt,
       category:categories[img.id],
-      referenceTypes:refTypes[img.id]||[],
+      referenceTypes:getRefList(img),
       hasImageRefs:hasRefs(img.prompt),
       mjUrl:`https://www.midjourney.com/jobs/${img.id}?index=0`,
       side, size, votes:vc(img.id)
