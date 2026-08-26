@@ -108,19 +108,32 @@ function ragPrompts() {
     }
     function ragScore(tf) { // {s: summed line-end spread of every wrapped paragraph, n: total lines}
         // params/ref paragraphs count too once they wrap — a width that orphans
-        // "--hd" onto its own short line scores worse than one that balances it
+        // "--hd" onto its own short line scores worse than one that balances it.
+        // A paragraph's LAST line may end short of the pack for free, but ending
+        // beyond the longest non-final line (the long-last-line look) is penalized.
         var ps = tf.paragraphs, s = 0, n = 0;
+        var packMax = null, finals = [];
         for (var p = 1; p < ps.length; p++) {
             var ls = ps.item(p).lines, L = ls.length;
             n += L;
-            if (L < 2) continue;
-            var mn = null, mx = null;
             for (var li = 0; li < L; li++) {
                 var e = lineEnd(ls.item(li));
-                if (mn === null || e < mn) mn = e;
-                if (mx === null || e > mx) mx = e;
+                if (li === L - 1) finals.push(e);
+                else if (packMax === null || e > packMax) packMax = e;
+            }
+            if (L < 2) continue;
+            var mn = null, mx = null;
+            for (li = 0; li < L; li++) {
+                var e2 = lineEnd(ls.item(li));
+                if (mn === null || e2 < mn) mn = e2;
+                if (mx === null || e2 > mx) mx = e2;
             }
             s += mx - mn;
+        }
+        if (packMax !== null) {
+            for (var f = 0; f < finals.length; f++) {
+                if (finals[f] > packMax) s += (finals[f] - packMax) * 2;
+            }
         }
         return { s: s, n: n };
     }
