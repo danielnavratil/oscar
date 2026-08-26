@@ -114,6 +114,33 @@ function placeOscarPairs() {
         alert("Required fonts not found:\n• ABC Diatype Heavy\n• ABC Diatype Regular\n\nVerify they're installed and try again.");
         return;
     }
+    // CJK runs get their own faces (9pt / 10.8 like the body); missing fonts are reported per frame
+    var fontKO = getFont("Noto Sans KR", "Regular");
+    var fontZH = getFont("Hiragino Sans GB", "W3");
+    // \u escapes only — ExtendScript misreads literal CJK in unmarked source files
+    var KO_RE = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/;
+    var ZH_RE = /[\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uFF01-\uFF60]/; // ideographs + kana + CJK punct
+    function styleCjkRuns(tf) {
+        var story = tf.parentStory;
+        var txt = story.contents;
+        var jobs = [[KO_RE, fontKO, "Noto Sans KR Regular"], [ZH_RE, fontZH, "Hiragino Sans GB W3"]];
+        for (var j = 0; j < jobs.length; j++) {
+            if (!jobs[j][0].test(txt)) continue;
+            if (!jobs[j][1]) { errors.push("CJK text needs missing font " + jobs[j][2]); continue; }
+            var start = -1;
+            for (var i = 0; i <= txt.length; i++) {
+                var m = i < txt.length && jobs[j][0].test(txt.charAt(i));
+                if (m && start < 0) start = i;
+                if (!m && start >= 0) {
+                    var range = story.characters.itemByRange(start, i - 1);
+                    range.appliedFont = jobs[j][1];
+                    range.pointSize = 9;
+                    range.leading = 10.8;
+                    start = -1;
+                }
+            }
+        }
+    }
 
     // ── CONFIRM ────────────────────────────────────────────────
     var totalImages = 0;
@@ -263,6 +290,7 @@ function placeOscarPairs() {
             paras[pi].justification = Justification.LEFT_ALIGN;
             paras[pi].hyphenation   = false;
         }
+        styleCjkRuns(tf);
         return tf;
     }
 
