@@ -15,22 +15,21 @@
 #target indesign
 
 function placeQrCodes() {
-    var QR_FOLDER     = "/Users/daniel/Documents/Creative/Asimov/Midjourney/Issue 41/QR Codes";
+    var QR_FOLDER     = "/Users/daniel/Documents/Creative/Asimov/Midjourney/Issue 42/QR Codes";
     var TEMPLATE_LINK = "editwhizkid_.png";
 
     // username (first line of the placed prompt frame) → QR file
     var entries = [
-        { user: "a_kind_of",           file: "qr_pair11_L.png" },
-        { user: "u5581228313",         file: "qr_pair12_R.png" },
-        { user: "u1385538514",         file: "qr_pair13_R.png" },
-        { user: "mellorush",           file: "qr_pair15_R.png" },
-        { user: "u3385318828",         file: "qr_pair19_L.png" },
-        { user: "tsigs.",              file: "qr_pair22_L.png" },
-        { user: "grrrast",             file: "qr_pair22_R.png" },
-        { user: "everythingsings.art", file: "qr_pair24_R.png" },
-        { user: "Bomburi",             file: "qr_pair45_L.png" },
-        { user: "pershinaa",           file: "qr_pair46_L.png" },
-        { user: "lalaluna",            file: "qr_pair47_R.png" }
+        { user: "backwhen",         file: "qr_pair12_R.png" },
+        { user: "ALEP",             file: "qr_pair13_R.png" },
+        { user: "honeylacquertoys", file: "qr_pair23_R.png" },
+        { user: "u8531864997",      file: "qr_pair25_R.png" },
+        { user: "Sarang",           file: "qr_pair29_R.png" },
+        { user: "juljuljuljuljul",  file: "qr_pair34_L.png" },
+        { user: "u9592666762",      file: "qr_pair34_R.png" },
+        { user: "Lala_And_Jull",    file: "qr_pair35_L.png" },
+        { user: "dogleather",       file: "qr_pair38_R.png" },
+        { user: "u8817885584",      file: "qr_pair47_L.png" }
     ];
 
     if (app.documents.length === 0) {
