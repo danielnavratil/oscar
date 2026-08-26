@@ -193,18 +193,24 @@ function placeOscarPairs() {
     // ── GEOMETRY ───────────────────────────────────────────────
     // All bounds returned as {top, left, bottom, right} in page-relative inches.
 
+    // Full-bleed images whose aspect leaves less than this much uncovered get
+    // snapped to full bleed on all sides (fill-proportional crops the excess):
+    // 3:4, 4:5, 2:3 all snap; 9:16 and wider/taller keep their computed edge.
+    var FULL_BLEED_SNAP = 1.5;
     function imageBounds(side, size, aspect) {
         var t, l, b, r, W, H;
         if (size === "full bleed") {
             if (aspect >= PAGE_ASPECT) {
                 // landscape/square: extend to spine, bottom calculated
                 W = PAGE_BLEED_W; H = W / aspect;
+                if (PAGE_BLEED_H - H <= FULL_BLEED_SNAP) H = PAGE_BLEED_H;  // snap: no band above the bottom trim
                 t = TOP_BLEED; b = t + H;
                 if (side === "L") { l = OUTER_BLEED_L; r = SPINE_L; }
                 else              { l = SPINE_R;       r = OUTER_BLEED_R; }
             } else {
                 // portrait: extend to bottom bleed, right edge calculated
                 H = PAGE_BLEED_H; W = H * aspect;
+                if (PAGE_BLEED_W - W <= FULL_BLEED_SNAP) W = PAGE_BLEED_W;  // snap: no sliver at the spine
                 t = TOP_BLEED; b = BOTTOM_BLEED;
                 if (side === "L") { l = OUTER_BLEED_L;     r = l + W; }
                 else              { r = OUTER_BLEED_R;     l = r - W; }
