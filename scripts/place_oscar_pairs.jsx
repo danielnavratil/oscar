@@ -46,10 +46,18 @@ function placeOscarPairs() {
     }
     var doc = app.activeDocument;
 
-    var jsonFile = File.openDialog("Select Oscar pairs JSON", "*.json");
+    // Optional preset for automation (set via $.global.OSCAR_PRESET before eval):
+    // { jsonPath, imagesFolder, afterPage, autoConfirm, quiet } — skips the matching dialogs.
+    var preset = $.global.OSCAR_PRESET || {};
+
+    var jsonFile = preset.jsonPath ? new File(preset.jsonPath)
+                                   : File.openDialog("Select Oscar pairs JSON", "*.json");
     if (!jsonFile) return;
-    var imagesFolder = Folder.selectDialog("Select folder of CMYK JPEGs (filenames are UUIDs)");
+    if (!jsonFile.exists) { alert("JSON not found:\n" + jsonFile.fsName); return; }
+    var imagesFolder = preset.imagesFolder ? new Folder(preset.imagesFolder)
+                                           : Folder.selectDialog("Select folder of CMYK JPEGs (filenames are UUIDs)");
     if (!imagesFolder) return;
+    if (!imagesFolder.exists) { alert("Folder not found:\n" + imagesFolder.fsName); return; }
 
     jsonFile.encoding = "UTF-8";
     jsonFile.open("r"); var jsonText = jsonFile.read(); jsonFile.close();
@@ -117,7 +125,8 @@ function placeOscarPairs() {
     // New pages are spliced in after the chosen page, so everything after it
     // (the closing spread) slides back untouched instead of being placed over.
     var defaultAfter = doc.pages.length - 3; // default keeps the last 3 pages (inside back cover spread)
-    var input = prompt("Insert pair spreads AFTER page:\n(everything after that page moves back unchanged)", String(defaultAfter));
+    var input = preset.afterPage != null ? String(preset.afterPage)
+              : prompt("Insert pair spreads AFTER page:\n(everything after that page moves back unchanged)", String(defaultAfter));
     if (input === null) return;
     var afterPage = parseInt(input, 10);
     if (isNaN(afterPage) || afterPage < 1 || afterPage > doc.pages.length) {
@@ -126,7 +135,7 @@ function placeOscarPairs() {
     var START_PAGE = afterPage + 1;
     var newPages = pairs.length * 2;
 
-    if (!confirm("Place " + totalImages + " images across " + pairs.length + " spreads?\n\n" +
+    if (!preset.autoConfirm && !confirm("Place " + totalImages + " images across " + pairs.length + " spreads?\n\n" +
                  newPages + " pages will be inserted after page " + afterPage +
                  " (pages " + START_PAGE + "–" + (afterPage + newPages) + "); the " +
                  (doc.pages.length - afterPage) + " page(s) after that move back unchanged.")) return;
@@ -319,9 +328,11 @@ function placeOscarPairs() {
     // ── REPORT ─────────────────────────────────────────────────
     var msg = "Placed " + placed + " images across " + pairs.length + " spreads.";
     if (errors.length) msg += "\n\nErrors (" + errors.length + "):\n" + errors.join("\n");
+    if (preset.quiet) return msg;
     alert(msg);
 }
 
 // Run as one undoable action so Cmd+Z reverts everything
-app.doScript(placeOscarPairs, ScriptLanguage.JAVASCRIPT, undefined,
+var __result = app.doScript(placeOscarPairs, ScriptLanguage.JAVASCRIPT, undefined,
              UndoModes.ENTIRE_SCRIPT, "Place Oscar Pairs");
+__result;
