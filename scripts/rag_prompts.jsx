@@ -279,28 +279,22 @@ function ragPrompts() {
             var maxW = AVAIL - GAP - MIN_W;
             var curveL = buildCurve(tfL, MIN_W, maxW);
             var curveR = buildCurve(tfR, MIN_W, maxW);
-            // joint split: best combined spread; among still-good splits, the one
-            // with both widths closest to the per-frame ideal wins
-            var minTot = null, a, c;
+            // joint split over both frames' curves.
+            var a, c;
+            // composite cost: rag quality + height of the taller frame (0.05" of
+            // rag per line — a towering narrow prompt loses to a slightly rougher
+            // wide one); near-ties go to widths closest to the per-frame ideal
+            var LINE_COST = 0.05;
+            var best = null, bestCost = null, bestDev = null;
             for (a = 0; a < curveL.length; a++) {
                 for (c = 0; c < curveR.length; c++) {
                     if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
-                    var t = curveL[a].s + curveR[c].s;
-                    if (minTot === null || t < minTot) minTot = t;
-                }
-            }
-            // among still-good splits: shortest tallest-frame first (no towering
-            // narrow prompts), then widths closest to the per-frame ideal
-            var best = null, bestMaxN = null, bestDev = null;
-            for (a = 0; a < curveL.length; a++) {
-                for (c = 0; c < curveR.length; c++) {
-                    if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
-                    if (curveL[a].s + curveR[c].s > minTot + BAND) continue;
-                    var mN = Math.max(curveL[a].n, curveR[c].n);
+                    var cost = curveL[a].s + curveR[c].s +
+                               LINE_COST * Math.max(curveL[a].n, curveR[c].n);
                     var dev = Math.abs(curveL[a].w - TARGET2) + Math.abs(curveR[c].w - TARGET2);
-                    if (best === null || mN < bestMaxN ||
-                        (mN === bestMaxN && dev < bestDev - 1e-9)) {
-                        best = { L: curveL[a], R: curveR[c] }; bestMaxN = mN; bestDev = dev;
+                    if (best === null || cost < bestCost - 0.02 ||
+                        (cost <= bestCost + 0.02 && dev < bestDev - 1e-9)) {
+                        best = { L: curveL[a], R: curveR[c] }; bestCost = cost; bestDev = dev;
                     }
                 }
             }
