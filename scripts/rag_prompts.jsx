@@ -3,7 +3,9 @@
 // Automated ragging pass for placed prompt frames. For each prompt:
 //   1. searches frame widths (min 2", max the margin width) for the
 //      most even ragged line endings — Balance Ragged Lines on, body
-//      paragraph scored, username line never counted,
+//      paragraph scored, username line never counted. Among widths
+//      whose rag is nearly as good as the best, the one closest to
+//      half a page width wins — go wide only when the rag demands it,
 //   2. nudges per-line tracking ±10 toward the mean line ending
 //      (body + params), backing off any change that reflows lines,
 //   3. tightens the frame to the text and anchors the block to the
@@ -32,7 +34,9 @@ function ragPrompts() {
     var OUTER_M = PAGE_W - MARGIN;          // 7.875
     var BOTTOM  = PAGE_H - MARGIN;          // 10.375
     var STEP    = 0.0625;                   // width search increment
-    var EPS     = 0.03;                     // "near-equal" score band (inches)
+    var BAND    = 0.15;                     // rag scores within this of the best count as "still good"
+    var TARGET  = PAGE_W / 2;               // ideal prompt width (~4.19")
+    var TARGET2 = (AVAIL - GAP) / 2;        // ideal per-frame width in a pair (~3.6")
     var TRACK   = 10;                       // tracking nudge cap
     var TOL     = 0.02;                     // line-end distance from mean before nudging
     var LABEL   = "oscar_prompt";
@@ -129,12 +133,15 @@ function ragPrompts() {
         }
         return samples;
     }
-    function bestSolo(curve) { // lowest score; among near-equal, widest
+    function bestSolo(curve) { // best rag; among still-good widths, closest to half a page
         var min = null, k;
         for (k = 0; k < curve.length; k++) if (min === null || curve[k].s < min) min = curve[k].s;
-        var pick = null;
+        var pick = null, bd = null;
         for (k = 0; k < curve.length; k++) {
-            if (curve[k].s <= min + EPS) pick = curve[k]; // ascending → widest survives
+            if (curve[k].s > min + BAND) continue;
+            var d = Math.abs(curve[k].w - TARGET);
+            if (pick === null || d < bd - 1e-9 ||
+                (Math.abs(d - bd) <= 1e-9 && curve[k].w > pick.w)) { pick = curve[k]; bd = d; }
         }
         return pick;
     }
@@ -237,6 +244,7 @@ function ragPrompts() {
 
         var g;
         for (g = 0; g < group.length; g++) {
+            group[g].texts.item(0).tracking = 0;   // clean slate so re-runs don't score stale tracking
             var bp = bodyPara(group[g]);
             if (bp) bp.balanceRaggedLines = true;
         }
@@ -254,26 +262,24 @@ function ragPrompts() {
             var maxW = AVAIL - GAP - MIN_W;
             var curveL = buildCurve(tfL, MIN_W, maxW);
             var curveR = buildCurve(tfR, MIN_W, maxW);
-            // joint split: minimize combined spread; near-ties prefer more total
-            // width, then more width to the frame with more lines
-            var best = null, a, c;
+            // joint split: best combined spread; among still-good splits, the one
+            // with both widths closest to the per-frame ideal wins
+            var minTot = null, a, c;
             for (a = 0; a < curveL.length; a++) {
                 for (c = 0; c < curveR.length; c++) {
                     if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
-                    var cand = {
-                        L: curveL[a], R: curveR[c],
-                        tot: curveL[a].s + curveR[c].s,
-                        sum: curveL[a].w + curveR[c].w
-                    };
-                    if (best === null) { best = cand; continue; }
-                    if (cand.tot < best.tot - EPS) { best = cand; continue; }
-                    if (cand.tot <= best.tot + EPS) {
-                        if (cand.sum > best.sum + 1e-6) { best = cand; continue; }
-                        if (Math.abs(cand.sum - best.sum) <= 1e-6) {
-                            var candTallW = cand.L.n >= cand.R.n ? cand.L.w : cand.R.w;
-                            var bestTallW = best.L.n >= best.R.n ? best.L.w : best.R.w;
-                            if (candTallW > bestTallW) best = cand;
-                        }
+                    var t = curveL[a].s + curveR[c].s;
+                    if (minTot === null || t < minTot) minTot = t;
+                }
+            }
+            var best = null, bestDev = null;
+            for (a = 0; a < curveL.length; a++) {
+                for (c = 0; c < curveR.length; c++) {
+                    if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
+                    if (curveL[a].s + curveR[c].s > minTot + BAND) continue;
+                    var dev = Math.abs(curveL[a].w - TARGET2) + Math.abs(curveR[c].w - TARGET2);
+                    if (best === null || dev < bestDev - 1e-9) {
+                        best = { L: curveL[a], R: curveR[c] }; bestDev = dev;
                     }
                 }
             }

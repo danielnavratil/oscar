@@ -118,7 +118,8 @@ function cleanPrompt(prompt, refTypeList) {
   const rest = filtered.filter(x=>!x.startsWith("--v"));
   const paramLine = [vParam,...rest].filter(Boolean).join(" ");
   const refLine = refTypeList?.length ? refTypeList.join(" + ") : "";
-  return [p,refLine,paramLine].filter(Boolean).join("\n");
+  // ref tags share the params line, at its start
+  return [p,[refLine,paramLine].filter(Boolean).join(" ")].filter(Boolean).join("\n");
 }
 
 function mechClean(rawPrompt) {
@@ -1843,8 +1844,9 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
     const edit = promptEdits?.[img.id];
     if (edit) {
       const body = edit.editedBody ?? extractPromptBody(edit.claudeBody);
-      const refLine = getRefList(img).join(" + ");
-      return [body, refLine, edit.params].filter(Boolean).join("\n");
+      // ref tags share the params line, at its start
+      const tail = [getRefList(img).join(" + "), edit.params].filter(Boolean).join(" ");
+      return [body, tail].filter(Boolean).join("\n");
     }
     return cleanPrompt(img.prompt, getRefList(img));
   };
