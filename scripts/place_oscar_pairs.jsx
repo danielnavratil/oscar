@@ -2,8 +2,8 @@
 // place_oscar_pairs.jsx
 // Reads the Oscar pairs JSON and the CMYK image folder, then
 // places every paired image and prompt into the active InDesign
-// document. Start page is computed dynamically as doc.pages.length - 3,
-// leaving the last 3 pages for the inside back cover spread.
+// document. Asks which page to insert after; new pages are spliced
+// in there, so the closing spread stays intact at the end.
 //
 // Run via File → Scripts → Browse on the open template document.
 // The entire run is one undoable action (Cmd+Z reverts it all).
@@ -45,7 +45,6 @@ function placeOscarPairs() {
         return;
     }
     var doc = app.activeDocument;
-    var START_PAGE = doc.pages.length - 3;  // leave last 3 pages for inside back cover spread
 
     var jsonFile = File.openDialog("Select Oscar pairs JSON", "*.json");
     if (!jsonFile) return;
@@ -114,13 +113,35 @@ function placeOscarPairs() {
         if (pairs[i].imageA) totalImages++;
         if (pairs[i].imageB) totalImages++;
     }
-    if (!confirm("Place " + totalImages + " images across " + pairs.length +
-                 " spreads starting at page " + START_PAGE + "?")) return;
+    // ── WHERE TO INSERT ────────────────────────────────────────
+    // New pages are spliced in after the chosen page, so everything after it
+    // (the closing spread) slides back untouched instead of being placed over.
+    var defaultAfter = doc.pages.length - 3; // default keeps the last 3 pages (inside back cover spread)
+    var input = prompt("Insert pair spreads AFTER page:\n(everything after that page moves back unchanged)", String(defaultAfter));
+    if (input === null) return;
+    var afterPage = parseInt(input, 10);
+    if (isNaN(afterPage) || afterPage < 1 || afterPage > doc.pages.length) {
+        alert("Page must be between 1 and " + doc.pages.length + "."); return;
+    }
+    var START_PAGE = afterPage + 1;
+    var newPages = pairs.length * 2;
 
-    // ── ENSURE ENOUGH PAGES ────────────────────────────────────
-    var lastPageNeeded = START_PAGE + (pairs.length - 1) * 2 + 1;
-    while (doc.pages.length < lastPageNeeded) {
-        doc.pages.add(LocationOptions.AT_END);
+    if (!confirm("Place " + totalImages + " images across " + pairs.length + " spreads?\n\n" +
+                 newPages + " pages will be inserted after page " + afterPage +
+                 " (pages " + START_PAGE + "–" + (afterPage + newPages) + "); the " +
+                 (doc.pages.length - afterPage) + " page(s) after that move back unchanged.")) return;
+
+    // ── INSERT PAGES (spliced in, not appended at the end) ─────
+    var anchor = doc.pages.item(afterPage - 1);
+    for (var n = 0; n < newPages; n++) {
+        anchor = doc.pages.add(LocationOptions.AFTER, anchor);
+    }
+    // Each pair assumes its spread starts on a left-hand page
+    if (doc.pages.item(START_PAGE - 1).side !== PageSideOptions.LEFT_HAND) {
+        alert("Page " + START_PAGE + " is not a left-hand page, so every pair would straddle two spreads.\n" +
+              "Cmd+Z to undo the inserted pages, then re-run and insert after page " +
+              (afterPage - 1) + " or " + (afterPage + 1) + " instead.");
+        return;
     }
 
     // ── UNITS: page-relative inches ────────────────────────────
