@@ -106,19 +106,23 @@ function ragPrompts() {
         }
         return line.endHorizontalOffset;
     }
-    function bodyPara(tf) { return tf.paragraphs.length > 1 ? tf.paragraphs.item(1) : null; }
-    function ragScore(tf) { // {s: spread of body line ends, n: body line count}
-        var para = bodyPara(tf);
-        if (!para) return { s: 0, n: 0 };
-        var L = para.lines.length;
-        if (L < 2) return { s: 0, n: L };
-        var mn = null, mx = null;
-        for (var li = 0; li < L; li++) {
-            var e = lineEnd(para.lines.item(li));
-            if (mn === null || e < mn) mn = e;
-            if (mx === null || e > mx) mx = e;
+    function ragScore(tf) { // {s: summed line-end spread of every wrapped paragraph, n: total lines}
+        // params/ref paragraphs count too once they wrap — a width that orphans
+        // "--hd" onto its own short line scores worse than one that balances it
+        var ps = tf.paragraphs, s = 0, n = 0;
+        for (var p = 1; p < ps.length; p++) {
+            var ls = ps.item(p).lines, L = ls.length;
+            n += L;
+            if (L < 2) continue;
+            var mn = null, mx = null;
+            for (var li = 0; li < L; li++) {
+                var e = lineEnd(ls.item(li));
+                if (mn === null || e < mn) mn = e;
+                if (mx === null || e > mx) mx = e;
+            }
+            s += mx - mn;
         }
-        return { s: mx - mn, n: L };
+        return { s: s, n: n };
     }
     function setWidth(tf, w) { // scoring position: parked at the left margin
         var b = tf.geometricBounds;
@@ -245,8 +249,8 @@ function ragPrompts() {
         var g;
         for (g = 0; g < group.length; g++) {
             group[g].texts.item(0).tracking = 0;   // clean slate so re-runs don't score stale tracking
-            var bp = bodyPara(group[g]);
-            if (bp) bp.balanceRaggedLines = true;
+            var ps0 = group[g].paragraphs;
+            for (var bi = 1; bi < ps0.length; bi++) ps0.item(bi).balanceRaggedLines = true;
         }
 
         if (group.length === 1) {
@@ -272,14 +276,18 @@ function ragPrompts() {
                     if (minTot === null || t < minTot) minTot = t;
                 }
             }
-            var best = null, bestDev = null;
+            // among still-good splits: shortest tallest-frame first (no towering
+            // narrow prompts), then widths closest to the per-frame ideal
+            var best = null, bestMaxN = null, bestDev = null;
             for (a = 0; a < curveL.length; a++) {
                 for (c = 0; c < curveR.length; c++) {
                     if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
                     if (curveL[a].s + curveR[c].s > minTot + BAND) continue;
+                    var mN = Math.max(curveL[a].n, curveR[c].n);
                     var dev = Math.abs(curveL[a].w - TARGET2) + Math.abs(curveR[c].w - TARGET2);
-                    if (best === null || dev < bestDev - 1e-9) {
-                        best = { L: curveL[a], R: curveR[c] }; bestDev = dev;
+                    if (best === null || mN < bestMaxN ||
+                        (mN === bestMaxN && dev < bestDev - 1e-9)) {
+                        best = { L: curveL[a], R: curveR[c] }; bestMaxN = mN; bestDev = dev;
                     }
                 }
             }
