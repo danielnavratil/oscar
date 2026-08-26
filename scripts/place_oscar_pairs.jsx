@@ -240,6 +240,7 @@ function placeOscarPairs() {
         var tf = page.textFrames.add({
             geometricBounds: [bounds.top, bounds.left, bounds.bottom, bounds.right]
         });
+        tf.label = "oscar_prompt";   // rag_prompts.jsx finds frames by this
         tf.textFramePreferences.autoSizingType = AutoSizingTypeEnum.HEIGHT_ONLY;
         // anchor at the bottom: frames grow upward, so every prompt's bottom edge stays on PROMPT_BOTTOM
         tf.textFramePreferences.autoSizingReferencePoint = AutoSizingReferenceEnum.BOTTOM_LEFT_POINT;
