@@ -1,15 +1,27 @@
 // ───────────────────────────────────────────────────────────────
 // place_qr_codes.jsx
-// Places QR codes for images whose prompts use image references.
+// Places QR codes under the prompts whose images used image references.
 // For each entry below it:
 //   1. finds the prompt text frame by its username first line,
-//   2. duplicates the template group (the frame group on the
-//      pasteboard whose image is linked to editwhizkid_.png),
-//   3. moves the copy directly below that prompt frame, left-aligned,
+//   2. duplicates the template group (the group on the pasteboard whose
+//      image is linked to editwhizkid_.png),
+//   3. sits the copy flush under that prompt frame, left edges aligned
+//      (no gap — matches Issue 41),
 //   4. relinks the placeholder image to the QR png, fit proportionally.
 //
+// Geometry, per page: a prompt's "unit" is its frame height plus the QR
+// group height when it gets one. The page's prompts share one top edge at
+// (bottom margin − tallest unit), so the tops stay aligned, nothing crosses
+// the bottom margin, and the tallest unit lands exactly on it. A QR under
+// the shorter prompt of a pair therefore floats above the margin — its
+// partner is what touches it.
+//
+// Re-running is safe: previously placed QR groups (label "oscar_qr") are
+// removed first, and the layout math is idempotent.
+//
 // QR pngs live in <issue folder>/QR Codes/ (see QR_FOLDER).
-// Run on the already-placed document. One undoable action.
+// Run on the already-placed, already-ragged document. One undoable action.
+// Set $.global.OSCAR_QR_PRESET = { docName, quiet } to run non-interactively.
 // ───────────────────────────────────────────────────────────────
 
 #target indesign
@@ -17,6 +29,8 @@
 function placeQrCodes() {
     var QR_FOLDER     = "/Users/daniel/Documents/Creative/Asimov/Midjourney/Issue 42/QR Codes";
     var TEMPLATE_LINK = "editwhizkid_.png";
+    var PROMPT_LABEL  = "oscar_prompt";
+    var QR_LABEL      = "oscar_qr";
 
     // username (first line of the placed prompt frame) → QR file
     var entries = [
@@ -32,13 +46,18 @@ function placeQrCodes() {
         { user: "u8817885584",      file: "qr_pair47_L.png" }
     ];
 
-    if (app.documents.length === 0) {
-        alert("Open the placed document first.");
-        return;
-    }
-    var doc = app.activeDocument;
+    var preset = $.global.OSCAR_QR_PRESET || {};
+    var quiet  = preset.quiet === true;
 
-    // ── UNITS: inches, spread-relative so both pages share one space ──
+    if (app.documents.length === 0) { alert("Open the placed document first."); return; }
+    var doc = app.activeDocument;
+    if (preset.docName) {
+        var named = app.documents.itemByName(preset.docName);
+        if (!named.isValid) { alert(preset.docName + " is not open."); return; }
+        doc = named;
+    }
+
+    // ── UNITS: page-relative inches ────────────────────────────
     var saved = {
         h: doc.viewPreferences.horizontalMeasurementUnits,
         v: doc.viewPreferences.verticalMeasurementUnits,
@@ -46,18 +65,17 @@ function placeQrCodes() {
     };
     doc.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.INCHES;
     doc.viewPreferences.verticalMeasurementUnits   = MeasurementUnits.INCHES;
-    doc.viewPreferences.rulerOrigin                = RulerOrigin.SPREAD_ORIGIN;
-
+    doc.viewPreferences.rulerOrigin                = RulerOrigin.PAGE_ORIGIN;
     function restoreUnits() {
         doc.viewPreferences.horizontalMeasurementUnits = saved.h;
         doc.viewPreferences.verticalMeasurementUnits   = saved.v;
         doc.viewPreferences.rulerOrigin                = saved.r;
     }
 
-    // ── FIND TEMPLATE GROUP (contains the editwhizkid_.png link) ──
-    var tmpl = null;
-    var groups = doc.groups;
+    // ── TEMPLATE GROUP (holds the editwhizkid_.png placeholder) ─
+    var tmpl = null, groups = doc.groups.everyItem().getElements();
     for (var g = 0; g < groups.length && !tmpl; g++) {
+        if (groups[g].label === QR_LABEL) continue;
         var gfx = groups[g].allGraphics;
         for (var i = 0; i < gfx.length; i++) {
             var lk = gfx[i].itemLink;
@@ -66,81 +84,109 @@ function placeQrCodes() {
     }
     if (!tmpl) {
         restoreUnits();
-        alert("Template group not found — no group in the document has an image linked to " + TEMPLATE_LINK);
+        alert("Template group not found — no group is linked to " + TEMPLATE_LINK);
         return;
     }
+    var tb = tmpl.geometricBounds;
+    var QR_H = tb[2] - tb[0];
 
-    // ── FIND PROMPT FRAME BY USERNAME FIRST LINE ──────────────
-    function findPromptFrame(user) {
-        var tfs = doc.textFrames;
-        for (var i = 0; i < tfs.length; i++) {
-            try {
-                var st = tfs[i].parentStory;
-                if (st.paragraphs.length === 0) continue;
-                var first = st.paragraphs[0].contents.replace(/[\r\n]+$/, "");
-                if (first === user && tfs[i].parentPage !== null) return tfs[i];
-            } catch (e) {}
-        }
-        return null;
+    // ── CLEAR PREVIOUS RUN ─────────────────────────────────────
+    var removed = 0;
+    for (var r = groups.length - 1; r >= 0; r--) {
+        if (groups[r].label === QR_LABEL) { groups[r].remove(); removed++; }
     }
 
-    // ── PLACE ─────────────────────────────────────────────────
-    var placed = 0, errors = [];
+    // ── COLLECT PROMPT FRAMES BY PAGE ──────────────────────────
+    var wanted = {}, errors = [];
     for (var e = 0; e < entries.length; e++) {
-        var ent = entries[e];
-        var qrFile = new File(QR_FOLDER + "/" + ent.file);
-        if (!qrFile.exists) { errors.push(ent.file + ": png missing on disk"); continue; }
+        var qf = new File(QR_FOLDER + "/" + entries[e].file);
+        if (!qf.exists) { errors.push(entries[e].file + ": png missing on disk"); continue; }
+        wanted[entries[e].user] = qf;
+    }
 
-        var tf = findPromptFrame(ent.user);
-        if (!tf) { errors.push(ent.user + ": prompt frame not found"); continue; }
+    var byPage = {}, order = [], found = {};
+    var all = doc.textFrames.everyItem().getElements();
+    for (var a = 0; a < all.length; a++) {
+        var tf = all[a];
+        if (tf.label !== PROMPT_LABEL || !tf.parentPage) continue;
+        var first = "";
+        try { first = String(tf.paragraphs.item(0).contents).replace(/[\r\n]+$/, ""); } catch (err) {}
+        var pid = tf.parentPage.id;
+        if (!byPage[pid]) { byPage[pid] = []; order.push(pid); }
+        byPage[pid].push({ tf: tf, user: first, qr: wanted[first] || null });
+        if (wanted[first]) found[first] = true;
+    }
+    for (var u in wanted) if (!found[u]) errors.push(u + ": prompt frame not found in this document");
 
-        try {
-            var dup = tmpl.duplicate(tf.parentPage);
-            // top of group flush to prompt bottom, left edges aligned
-            var pb = tf.geometricBounds;   // [top, left, bottom, right]
-            var db = dup.visibleBounds;
-            dup.move(undefined, [pb[1] - db[1], pb[2] - db[0]]);
+    // ── LAYOUT + PLACE ─────────────────────────────────────────
+    var placed = 0, movedPages = [], floats = [];
+    for (var o = 0; o < order.length; o++) {
+        var grp = byPage[order[o]];
+        var hasAny = false;
+        for (var k = 0; k < grp.length; k++) if (grp[k].qr) hasAny = true;
+        if (!hasAny) continue;
 
-            // relink placeholder → QR, fit proportionally
-            var relinked = false;
-            var dgfx = dup.allGraphics;
-            for (var i2 = 0; i2 < dgfx.length; i2++) {
-                var dlk = dgfx[i2].itemLink;
-                if (dlk && dlk.name === TEMPLATE_LINK) {
-                    var frame = dgfx[i2].parent;
-                    dlk.relink(qrFile);
-                    try { dlk.update(); } catch (er) {}
-                    frame.fit(FitOptions.PROPORTIONALLY);
-                    relinked = true;
-                    break;
+        var page  = grp[0].tf.parentPage;
+        var limit = page.bounds[2] - page.marginPreferences.bottom;
+
+        // tallest unit on the page sets the shared top edge
+        var maxUnit = 0, curTop = null;
+        for (k = 0; k < grp.length; k++) {
+            var b = grp[k].tf.geometricBounds;
+            var unit = (b[2] - b[0]) + (grp[k].qr ? QR_H : 0);
+            if (unit > maxUnit) maxUnit = unit;
+            if (curTop === null || b[0] < curTop) curTop = b[0];
+        }
+        var wantTop = limit - maxUnit;
+        var dy = wantTop - curTop;
+        if (Math.abs(dy) > 0.0005) {
+            for (k = 0; k < grp.length; k++) grp[k].tf.move(undefined, [0, dy]);
+            movedPages.push(page.name + " (" + (dy < 0 ? "up " : "down ") + Math.abs(dy).toFixed(3) + '")');
+        }
+
+        // QR flush under its own prompt, left edges aligned
+        for (k = 0; k < grp.length; k++) {
+            if (!grp[k].qr) continue;
+            try {
+                var dup = tmpl.duplicate(page);
+                dup.label = QR_LABEL;
+                var relinked = false, dgfx = dup.allGraphics;
+                for (var i2 = 0; i2 < dgfx.length; i2++) {
+                    var dlk = dgfx[i2].itemLink;
+                    if (dlk && dlk.name === TEMPLATE_LINK) {
+                        var frame = dgfx[i2].parent;
+                        dlk.relink(grp[k].qr);
+                        try { dlk.update(); } catch (er) {}
+                        frame.fit(FitOptions.PROPORTIONALLY);
+                        relinked = true;
+                        break;
+                    }
                 }
-            }
-            if (!relinked) {
-                dup.remove();
-                errors.push(ent.user + ": placeholder image not found in duplicated group");
-                continue;
-            }
+                if (!relinked) { dup.remove(); errors.push(grp[k].user + ": placeholder not found in copy"); continue; }
 
-            // if the group crosses the bottom margin, bump prompt + QR up together
-            // by just the overshoot (prompts moved by hand can sit high enough to fit)
-            var page   = tf.parentPage;
-            var limit  = page.bounds[2] - page.marginPreferences.bottom;
-            var over   = dup.visibleBounds[2] - limit;
-            if (over > 0) {
-                tf.move(undefined, [0, -over]);
-                dup.move(undefined, [0, -over]);
+                var pb = grp[k].tf.geometricBounds;
+                var db = dup.geometricBounds;
+                dup.move(undefined, [pb[1] - db[1], pb[2] - db[0]]);
+
+                var gapBelow = limit - dup.geometricBounds[2];
+                if (gapBelow > 0.005) floats.push(grp[k].user + " pg" + page.name + " " + gapBelow.toFixed(2) + '" above margin');
+                placed++;
+            } catch (err2) {
+                errors.push(grp[k].user + ": " + err2.message);
             }
-            placed++;
-        } catch (err) {
-            errors.push(ent.user + ": " + err.message);
         }
     }
 
     restoreUnits();
     var msg = "Placed " + placed + "/" + entries.length + " QR codes.";
-    if (errors.length) msg += "\n\nIssues:\n" + errors.join("\n");
+    if (removed)          msg += "\nRemoved " + removed + " QR group(s) from a previous run.";
+    if (movedPages.length) msg += "\n\nPages re-seated (" + movedPages.length + "): " + movedPages.join(", ");
+    if (floats.length)    msg += "\n\nQR above the bottom margin (partner prompt is the flush one):\n  " + floats.join("\n  ");
+    if (errors.length)    msg += "\n\nSkipped:\n  " + errors.join("\n  ");
+    if (quiet) return msg;
     alert(msg);
 }
 
-app.doScript(placeQrCodes, ScriptLanguage.JAVASCRIPT, undefined,
+var __result = app.doScript(placeQrCodes, ScriptLanguage.JAVASCRIPT, undefined,
              UndoModes.ENTIRE_SCRIPT, "Place QR Codes");
+__result;
