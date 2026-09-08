@@ -57,7 +57,11 @@ function placeQrCodes() {
         doc = named;
     }
 
-    // ── UNITS: page-relative inches ────────────────────────────
+    // ── UNITS: spread-relative inches ──────────────────────────
+    // Spread origin, not page origin: a freshly duplicated group and a prompt
+    // frame only share one coordinate space per spread. With PAGE_ORIGIN the
+    // delta below is short by a page width for right-hand pages, which throws
+    // the QR onto the facing page.
     var saved = {
         h: doc.viewPreferences.horizontalMeasurementUnits,
         v: doc.viewPreferences.verticalMeasurementUnits,
@@ -65,7 +69,7 @@ function placeQrCodes() {
     };
     doc.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.INCHES;
     doc.viewPreferences.verticalMeasurementUnits   = MeasurementUnits.INCHES;
-    doc.viewPreferences.rulerOrigin                = RulerOrigin.PAGE_ORIGIN;
+    doc.viewPreferences.rulerOrigin                = RulerOrigin.SPREAD_ORIGIN;
     function restoreUnits() {
         doc.viewPreferences.horizontalMeasurementUnits = saved.h;
         doc.viewPreferences.verticalMeasurementUnits   = saved.v;
