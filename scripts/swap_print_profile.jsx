@@ -10,7 +10,17 @@
 
 function swapPrintProfile() {
     if (!app.documents.length) { alert("Open a document first."); return; }
+
+    // Optional preset for automation (set $.global.OSCAR_SWAP_PRESET before eval):
+    // { docName, toKopa, quiet } — skips the dialog and returns the report string.
+    var preset = $.global.OSCAR_SWAP_PRESET || {};
     var doc = app.activeDocument;
+    if (preset.docName) {
+        var named = app.documents.itemByName(preset.docName);
+        if (!named.isValid) { alert(preset.docName + " is not open."); return; }
+        doc = named;
+    }
+    if (preset.toKopa !== undefined) return runSwap(doc, preset.toKopa === true, preset.quiet === true);
 
     // ── direction dialog ──────────────────────────────────────
     var dlg = app.dialogs.add({ name: "Swap Print Profile", canCancel: true });
@@ -23,7 +33,10 @@ function swapPrintProfile() {
     var toKopa = rbg.selectedButton === 0;
     dlg.destroy();
     if (!ok) return;
+    return runSwap(doc, toKopa, false);
+}
 
+function runSwap(doc, toKopa, quiet) {
     var FROM = toKopa ? "HH" : "KOPA";
     var TO   = toKopa ? "KOPA" : "HH";
 
@@ -76,8 +89,10 @@ function swapPrintProfile() {
                missing.slice(0, 15).join("\n");
         if (missing.length > 15) msg += "\n… and " + (missing.length - 15) + " more";
     }
+    if (quiet) return msg;
     alert(msg);
 }
 
-app.doScript(swapPrintProfile, ScriptLanguage.JAVASCRIPT, undefined,
+var __result = app.doScript(swapPrintProfile, ScriptLanguage.JAVASCRIPT, undefined,
              UndoModes.ENTIRE_SCRIPT, "Swap Print Profile");
+__result;
