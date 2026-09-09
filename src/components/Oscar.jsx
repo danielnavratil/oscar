@@ -1091,7 +1091,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
         {displayedChunks.map(chunk=>{
           const allImgs = bmFilter ? chunk.images.filter(i=>allBm.has(i.id)) : chunk.images;
           if (!allImgs.length) return null;
-          const ps = chunkPages[chunk.key] || 200;
+          const ps = chunkPages[chunk.key] || GRID_PAGE;
           const imgs = allImgs.slice(0, ps);
           return (
             <div key={chunk.key} style={{marginBottom:34}}>
@@ -1103,9 +1103,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
               <MGrid images={imgs} myBm={myBm} allBm={allBm} onBm={onBm} colCount={COL_COUNTS[colSize]}
                 onFullscreen={img=>{const idx=flatImages.findIndex(i=>i.id===img.id);setFsIdx(Math.max(0,idx));setMode("fullscreen");}}/>
               {allImgs.length > ps && (
-                <button className="pl" onClick={()=>setChunkPages(p=>({...p,[chunk.key]:ps+400}))} style={{marginTop:10,width:"100%",padding:"7px 0",textAlign:"center"}}>
-                  load more · {allImgs.length - ps} remaining
-                </button>
+                <LoadMore remaining={allImgs.length - ps} onLoad={()=>setChunkPages(p=>({...p,[chunk.key]:(p[chunk.key]||GRID_PAGE)+GRID_PAGE}))}/>
               )}
             </div>
           );
@@ -1113,6 +1111,23 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
       </div>
     </div>
     </>
+  );
+}
+
+// Auto-pagination: loads the next batch when the sentinel comes within ~1.5 screens of view.
+const GRID_PAGE = 200;
+function LoadMore({ remaining, onLoad }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) onLoad(); }, { rootMargin: "1500px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [onLoad]);
+  return (
+    <div ref={ref} style={{marginTop:10,padding:"7px 0",textAlign:"center",fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)",letterSpacing:".1em"}}>
+      loading · {remaining} remaining
+    </div>
   );
 }
 
