@@ -1,7 +1,10 @@
 // ───────────────────────────────────────────────────────────────
 // place_qr_codes.jsx
 // Places QR codes under the prompts whose images used image references.
-// For each entry below it:
+// Nothing is edited per issue: the QR folder is <doc folder>/QR Codes and the
+// list of prompts that get one comes from the pairs JSON in the same folder
+// (every image with hasImageRefs → qr_pair<N>_<L|R>.png, keyed by username).
+// For each such entry it:
 //   1. finds the prompt text frame by its username first line,
 //   2. duplicates the template group (the group on the pasteboard whose
 //      image is linked to editwhizkid_.png),
@@ -19,32 +22,18 @@
 // Re-running is safe: previously placed QR groups (label "oscar_qr") are
 // removed first, and the layout math is idempotent.
 //
-// QR pngs live in <issue folder>/QR Codes/ (see QR_FOLDER).
-// Run on the already-placed, already-ragged document. One undoable action.
-// Set $.global.OSCAR_QR_PRESET = { docName, quiet } to run non-interactively.
+// Run on the already-placed, already-ragged document (saved inside its issue
+// folder next to oscar-<N>-pairs.json). One undoable action.
+// Set $.global.OSCAR_QR_PRESET = { docName, jsonPath, qrFolder, quiet } to
+// run non-interactively / override the auto-detected paths.
 // ───────────────────────────────────────────────────────────────
 
 #target indesign
 
 function placeQrCodes() {
-    var QR_FOLDER     = "/Users/daniel/Documents/Creative/Asimov/Midjourney/Issue 42/QR Codes";
     var TEMPLATE_LINK = "editwhizkid_.png";
     var PROMPT_LABEL  = "oscar_prompt";
     var QR_LABEL      = "oscar_qr";
-
-    // username (first line of the placed prompt frame) → QR file
-    var entries = [
-        { user: "backwhen",         file: "qr_pair12_R.png" },
-        { user: "ALEP",             file: "qr_pair13_R.png" },
-        { user: "honeylacquertoys", file: "qr_pair23_R.png" },
-        { user: "u8531864997",      file: "qr_pair25_R.png" },
-        { user: "Sarang",           file: "qr_pair29_R.png" },
-        { user: "juljuljuljuljul",  file: "qr_pair34_L.png" },
-        { user: "u9592666762",      file: "qr_pair34_R.png" },
-        { user: "Lala_And_Jull",    file: "qr_pair35_L.png" },
-        { user: "dogleather",       file: "qr_pair38_R.png" },
-        { user: "u8817885584",      file: "qr_pair47_L.png" }
-    ];
 
     var preset = $.global.OSCAR_QR_PRESET || {};
     var quiet  = preset.quiet === true;
@@ -56,6 +45,42 @@ function placeQrCodes() {
         if (!named.isValid) { alert(preset.docName + " is not open."); return; }
         doc = named;
     }
+
+    // ── ISSUE FOLDER: everything is relative to where the doc is saved ──
+    var issueFolder = null;
+    try { issueFolder = doc.saved ? doc.filePath : null; } catch (e0) {}
+    if (!issueFolder && !(preset.jsonPath && preset.qrFolder)) {
+        alert("Save the document inside its issue folder first (next to oscar-<N>-pairs.json)."); return;
+    }
+
+    var QR_FOLDER = preset.qrFolder || (issueFolder.fsName + "/QR Codes");
+
+    var jsonFile = null;
+    if (preset.jsonPath) jsonFile = new File(preset.jsonPath);
+    else {
+        var cands = issueFolder.getFiles(function (f) { return f instanceof File && /^oscar-.*pairs.*\.json$/i.test(f.name); });
+        if (cands.length === 1) jsonFile = cands[0];
+        else jsonFile = File.openDialog(cands.length ? "Several pairs JSONs here — pick one" : "Pairs JSON not found in " + issueFolder.fsName + " — select it", "*.json");
+    }
+    if (!jsonFile || !jsonFile.exists) { alert("Pairs JSON not found."); return; }
+    jsonFile.encoding = "UTF-8";
+    jsonFile.open("r"); var jsonText = jsonFile.read(); jsonFile.close();
+    var pairs;
+    // ExtendScript lacks JSON.parse; eval is safe here (our own export).
+    try { pairs = eval("(" + jsonText + ")"); }
+    catch (e1) { alert("Could not parse " + jsonFile.name + ":\n" + e1.message); return; }
+
+    // username (first line of the placed prompt frame) → QR file
+    var entries = [];
+    for (var pi = 0; pi < pairs.length; pi++) {
+        var sides = [pairs[pi].imageA, pairs[pi].imageB];
+        for (var si = 0; si < sides.length; si++) {
+            var im = sides[si];
+            if (!im || !im.hasImageRefs) continue;
+            entries.push({ user: im.username, file: "qr_pair" + pairs[pi].pair + "_" + (im.side || (si ? "R" : "L")) + ".png" });
+        }
+    }
+    if (!entries.length) { alert("No images in " + jsonFile.name + " have image references — nothing to place."); return; }
 
     // ── UNITS: spread-relative inches ──────────────────────────
     // Spread origin, not page origin: a freshly duplicated group and a prompt
@@ -182,7 +207,7 @@ function placeQrCodes() {
     }
 
     restoreUnits();
-    var msg = "Placed " + placed + "/" + entries.length + " QR codes.";
+    var msg = "Placed " + placed + "/" + entries.length + " QR codes from " + jsonFile.name + ".";
     if (removed)          msg += "\nRemoved " + removed + " QR group(s) from a previous run.";
     if (movedPages.length) msg += "\n\nPages re-seated (" + movedPages.length + "): " + movedPages.join(", ");
     if (floats.length)    msg += "\n\nQR above the bottom margin (partner prompt is the flush one):\n  " + floats.join("\n  ");
