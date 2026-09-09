@@ -36,6 +36,17 @@ const imgUrl = (img, size=640) => img.parent_id && img.parent_grid != null
   ? `https://cdn.midjourney.com/${img.parent_id}/0_${img.parent_grid}_${size}_N.webp`
   : `https://cdn.midjourney.com/${img.id}/0_0_${size}_N.webp`;
 const mjJobUrl = img => `https://www.midjourney.com/jobs/${img.id}?index=0`;
+// Warm the browser cache for the next few images so fullscreen navigation is instant.
+const PRELOAD_AHEAD = 8;
+function usePreload(images, idx, active) {
+  useEffect(() => {
+    if (!active) return;
+    for (let i = idx + 1; i <= idx + PRELOAD_AHEAD && i < images.length; i++) {
+      const im = new Image(); im.src = imgUrl(images[i]);
+    }
+    if (idx > 0) { const im = new Image(); im.src = imgUrl(images[idx-1]); }
+  }, [images, idx, active]);
+}
 const webpToJpg = (blob) => new Promise((resolve, reject) => {
   const url = URL.createObjectURL(blob);
   const image = new Image();
@@ -225,9 +236,6 @@ function GlobalStyles() {
       .rtt label{display:flex;align-items:center;gap:5px;cursor:pointer;padding:3px 0;font-size:10px;color:var(--tx2);font-family:'DM Mono',monospace;white-space:nowrap}
       .rtt label:hover{color:var(--tx)}
       .rtt input[type=checkbox]{cursor:pointer}
-      .fs-img{transition:transform .26s cubic-bezier(.25,.46,.45,.94),opacity .26s ease}
-      .fs-img.swipe-left{transform:translateX(-160px) rotate(-7deg);opacity:0;pointer-events:none}
-      .fs-img.swipe-right{transform:translateX(160px) rotate(7deg);opacity:0;pointer-events:none}
     `;
     if (!document.getElementById("osc-styles")) document.head.appendChild(el);
     return () => el.remove();
@@ -923,7 +931,6 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
   const [chunkPages, setChunkPages] = useState({});
   const [fsIdx, setFsIdx] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
-  const [swipeDir, setSwipeDir] = useState(null);
 
   const filteredImages = (() => {
     let imgs = images;
@@ -966,17 +973,14 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
   }, []);
 
   const doAdvance = useCallback((bookmark) => {
-    const dir = bookmark ? "right" : "left";
-    setSwipeDir(dir);
-    setTimeout(() => {
-      if (bookmark) {
-        const img = flatImagesRef.current[fsIdxRef.current];
-        if (img) { onBm(img.id); setUndoStack(s=>[...s,{id:img.id}]); }
-      }
-      setFsIdx(i => Math.min(i+1, flatImagesRef.current.length-1));
-      setSwipeDir(null);
-    }, 270);
+    if (bookmark) {
+      const img = flatImagesRef.current[fsIdxRef.current];
+      if (img) { onBm(img.id); setUndoStack(s=>[...s,{id:img.id}]); }
+    }
+    setFsIdx(i => Math.min(i+1, flatImagesRef.current.length-1));
   }, [onBm]);
+
+  usePreload(flatImages, fsIdx, mode==="fullscreen");
 
   // Fullscreen keyboard handler
   useEffect(() => {
@@ -985,8 +989,8 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
       if (e.key==="Escape") { setMode("grid"); return; }
       if (e.key===" ") { e.preventDefault(); doAdvance(false); }
       else if (e.key.toLowerCase()==="b") doAdvance(true);
-      else if (e.key==="ArrowLeft") { setSwipeDir(null); setFsIdx(i=>Math.max(i-1,0)); }
-      else if (e.key==="ArrowRight") { setSwipeDir(null); setFsIdx(i=>Math.min(i+1,flatImagesRef.current.length-1)); }
+      else if (e.key==="ArrowLeft") setFsIdx(i=>Math.max(i-1,0));
+      else if (e.key==="ArrowRight") setFsIdx(i=>Math.min(i+1,flatImagesRef.current.length-1));
       else if (e.key==="Backspace") {
         e.preventDefault();
         setUndoStack(s=>{
@@ -1023,9 +1027,9 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
     {mode==="fullscreen" && fsImg && (
       <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",background:"var(--bg)"}}>
         <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"28px 36px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>setMode("grid")}>
-          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.max(i-1,0));}} style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>&#8249;</button>
-          <img src={imgUrl(fsImg)} alt="" className={`fs-img${swipeDir?` swipe-${swipeDir}`:""}`} style={{maxHeight:"calc(100vh - 120px)",maxWidth:"100%",objectFit:"contain",display:"block",cursor:"default"}} onClick={e=>e.stopPropagation()} onError={e=>e.target.style.opacity=".2"}/>
-          <button onClick={e=>{e.stopPropagation();setSwipeDir(null);setFsIdx(i=>Math.min(i+1,flatImages.length-1));}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>&#8250;</button>
+          <button onClick={e=>{e.stopPropagation();setFsIdx(i=>Math.max(i-1,0));}} style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>&#8249;</button>
+          <img src={imgUrl(fsImg)} alt="" style={{maxHeight:"calc(100vh - 120px)",maxWidth:"100%",objectFit:"contain",display:"block",cursor:"default"}} onClick={e=>e.stopPropagation()} onError={e=>e.target.style.opacity=".2"}/>
+          <button onClick={e=>{e.stopPropagation();setFsIdx(i=>Math.min(i+1,flatImages.length-1));}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"var(--sf)",border:"1px solid var(--bd)",color:"var(--tx2)",width:34,height:56,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>&#8250;</button>
         </div>
         <div style={{width:288,borderLeft:"1px solid var(--bd)",padding:22,display:"flex",flexDirection:"column",gap:16,overflowY:"auto",background:"var(--sf)",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -1205,6 +1209,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote, myCo
   const [idx, setIdx] = useState(startIdx);
   const imgsRef = useRef(images);
   useEffect(() => { imgsRef.current = images; }, [images]);
+  usePreload(images, idx, true);
 
   useEffect(() => {
     const h = e => {
