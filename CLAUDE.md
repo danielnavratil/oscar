@@ -24,7 +24,7 @@ Internal curation tool for a Midjourney magazine. Three users (Daniel, Hongrae, 
 
 ## Print pipeline (runs on Daniel's Mac only)
 
-`scripts/oscar_pipeline.sh <pairs.json>` downloads full-res images from the MJ CDN (`download_images.py`, auth via Arc browser cookies), upscales 4x with Real-ESRGAN (`~/tools/realesrgan/`), and drives Photoshop (`convert_both.jsx`) to output two CMYK folders: `HH Links/` (SWOP, US press) and `KOPA Links/` (PSO, Euro press). Then in InDesign, `place_oscar_pairs.jsx` places pairs + prompts into the template and `place_qr_codes.jsx` adds QR codes (its folder path and username→file list are edited per issue).
+`scripts/oscar_pipeline.sh <pairs.json>` downloads full-res images from the MJ CDN (`download_images.py`, auth via Arc browser cookies), upscales 4x with Real-ESRGAN (`~/tools/realesrgan/`), and drives Photoshop (`convert_both.jsx`) to output two CMYK folders: `HH Links/` (SWOP, US press) and `KOPA Links/` (PSO, Euro press). Then in InDesign, `place_oscar_pairs.jsx` places pairs + prompts into the template and `place_qr_codes.jsx` adds QR codes (reads `<doc folder>/QR Codes/` and the pairs JSON beside the .indd; nothing to edit per issue, but the .indd must be saved in the issue folder).
 
 - InDesign executes the copy in `~/Library/Preferences/Adobe InDesign/.../Scripts Panel/`, not the repo. After editing a placement script, copy it there — the repo copy is canonical; copies have drifted before.
 - Daily-theme projects skip the pipeline and placement entirely (browser-side JPG zip download from the Export tab).
