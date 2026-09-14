@@ -1397,7 +1397,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"16px 18px 40px"}}>
-        <MGrid images={filtered} myBm={myBm} allBm={allBm} myVotes={myVotes} voteCount={showOthers?voteCount:undefined} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
+        <MGrid images={filtered} myBm={myBm} myVotes={myVotes} voteCount={showOthers?voteCount:undefined} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
       </div>
     </div>
     </>
