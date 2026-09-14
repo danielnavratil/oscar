@@ -206,7 +206,7 @@ function GlobalStyles() {
       ::-webkit-scrollbar-track{background:var(--bg)}
       ::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
       .iw{position:relative;overflow:hidden;background:var(--img-ph);cursor:pointer}
-      .iw img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .32s ease;display:block}
+      .iw img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .32s ease;display:block;-webkit-user-drag:none;user-select:none}
       .iw:hover img{transform:scale(1.04)}
       .iov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.72) 0%,transparent 52%);opacity:0;transition:opacity .2s;pointer-events:none}
       .iw:hover .iov{opacity:1}
@@ -1157,8 +1157,8 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
 
   const handleClick = e => {
     if (e.metaKey||e.ctrlKey) {
-      if (onBm) { e.stopPropagation(); onBm(img.id); return; }
       if (onVote) { e.stopPropagation(); onVote(img.id); return; }
+      if (onBm) { e.stopPropagation(); onBm(img.id); return; }
     }
     if (showSel) onSel?.(img); else onFull?.(img);
   };
@@ -1168,7 +1168,7 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
   return (
     <div style={{outline,outlineOffset:outline!=="none"?2:0}}>
       <div className="iw" style={{paddingBottom:aspectPad(img.aspect)}} onClick={handleClick}>
-        {!err ? <img src={imgUrl(img)} alt="" loading="lazy" onError={()=>setErr(true)}/> : <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--tx3)",fontSize:9,fontFamily:"'DM Mono',monospace"}}>no image</div>}
+        {!err ? <img src={imgUrl(img)} alt="" loading="lazy" draggable={false} onDragStart={e=>e.preventDefault()} onError={()=>setErr(true)}/> : <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--tx3)",fontSize:9,fontFamily:"'DM Mono',monospace"}}>no image</div>}
         <div className="iov"/>
         <div className="imt">
           <div style={{fontSize:9,color:"#ccc",fontFamily:"'DM Mono',monospace"}}>@{img.user_name}</div>
