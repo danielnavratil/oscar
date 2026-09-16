@@ -17,6 +17,7 @@ Internal curation tool for a Midjourney magazine. Three users (Daniel, Hongrae, 
 
 ## Gotchas
 
+- **Supabase returns at most 1000 rows per request and truncates silently.** Every list load in `db.ts` must go through `fetchAll()` (pages with a stable order). `categories` and `ref_types` are keyed by `image_id` across all issues (no `issue_id` column), so they are loaded whole and were the first to cross the cap (Sept 2026: issue 43's categories "disappeared").
 - **Migrations never auto-apply.** There is no CI. New SQL in `supabase/migrations/` must be pasted into the Supabase SQL Editor by hand. (`20260527000000_add_prompt_edits.sql` was not yet confirmed run as of late May 2026.)
 - The `images` table was dropped in May 2026 and all FK constraints to it removed — the old FKs caused silent insert failures (optimistic UI showed a vote; Postgres rolled it back). Do not reintroduce FKs on `image_id`.
 - `issue_id` still has an FK to `issues(id)`, so every new project needs a row in `issues` — the add-project flow (`upsertIssue`) handles this.
