@@ -17,6 +17,22 @@ export function setCurrentProject(issueId: string, jsonFile: string) {
   ISSUE_JSON_PATH = jsonFile;
 }
 
+// Supabase caps every request at 1000 rows and truncates silently. Every list
+// load goes through this so a table outgrowing that (categories did, Sept 2026)
+// never makes rows vanish from the UI. The query must carry a stable order.
+const PAGE = 1000;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAll<T>(query: () => any): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await query().range(from, from + PAGE - 1);
+    if (error) throw error;
+    rows.push(...((data ?? []) as T[]));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows;
+}
+
 // ── ISSUE JSON (Storage) ──────────────────────────────────────
 
 const ISSUE_JSON_BUCKET = 'issue-json';
@@ -133,14 +149,14 @@ export async function loadIssueJson(): Promise<unknown[] | null> {
 // ── BOOKMARKS ─────────────────────────────────────────────────
 
 export async function loadBookmarks(): Promise<Record<string, Set<string>>> {
-  const { data, error } = await supabase
+  const data = await fetchAll<{ image_id: string; voter_name: string }>(() => supabase
     .from('bookmarks')
     .select('image_id, voter_name')
-    .eq('issue_id', ISSUE_ID);
-  if (error) throw error;
+    .eq('issue_id', ISSUE_ID)
+    .order('image_id').order('voter_name'));
 
   const result: Record<string, Set<string>> = {};
-  for (const row of data ?? []) {
+  for (const row of data) {
     if (!result[row.voter_name]) result[row.voter_name] = new Set();
     result[row.voter_name].add(row.image_id);
   }
@@ -167,14 +183,14 @@ export async function removeBookmark(imageId: string, voterName: string) {
 // ── COVER PICKS ───────────────────────────────────────────────
 
 export async function loadCoverPicks(): Promise<Record<string, Set<string>>> {
-  const { data, error } = await supabase
+  const data = await fetchAll<{ image_id: string; voter_name: string }>(() => supabase
     .from('cover_picks')
     .select('image_id, voter_name')
-    .eq('issue_id', ISSUE_ID);
-  if (error) throw error;
+    .eq('issue_id', ISSUE_ID)
+    .order('image_id').order('voter_name'));
 
   const result: Record<string, Set<string>> = {};
-  for (const row of data ?? []) {
+  for (const row of data) {
     if (!result[row.voter_name]) result[row.voter_name] = new Set();
     result[row.voter_name].add(row.image_id);
   }
@@ -200,12 +216,14 @@ export async function removeCoverPick(imageId: string, voterName: string) {
 
 // ── CATEGORIES ────────────────────────────────────────────────
 
+// categories and ref_types are keyed by image_id across all issues (no issue_id
+// column), so these load the whole table.
 export async function loadCategories(): Promise<Record<string, string>> {
-  const { data, error } = await supabase
+  const data = await fetchAll<{ image_id: string; category: string }>(() => supabase
     .from('categories')
-    .select('image_id, category');
-  if (error) throw error;
-  return Object.fromEntries((data ?? []).map(r => [r.image_id, r.category]));
+    .select('image_id, category')
+    .order('image_id'));
+  return Object.fromEntries(data.map(r => [r.image_id, r.category]));
 }
 
 export async function setCategory(imageId: string, category: string) {
@@ -218,11 +236,11 @@ export async function setCategory(imageId: string, category: string) {
 // ── REFERENCE TYPES ───────────────────────────────────────────
 
 export async function loadRefTypes(): Promise<Record<string, string[]>> {
-  const { data, error } = await supabase
+  const data = await fetchAll<{ image_id: string; types: string[] | null }>(() => supabase
     .from('ref_types')
-    .select('image_id, types');
-  if (error) throw error;
-  return Object.fromEntries((data ?? []).map(r => [r.image_id, r.types ?? []]));
+    .select('image_id, types')
+    .order('image_id'));
+  return Object.fromEntries(data.map(r => [r.image_id, r.types ?? []]));
 }
 
 export async function setRefTypes(imageId: string, types: string[]) {
@@ -235,14 +253,14 @@ export async function setRefTypes(imageId: string, types: string[]) {
 // ── VOTES ─────────────────────────────────────────────────────
 
 export async function loadVotes(): Promise<Record<string, Set<string>>> {
-  const { data, error } = await supabase
+  const data = await fetchAll<{ image_id: string; voter_name: string }>(() => supabase
     .from('votes')
     .select('image_id, voter_name')
-    .eq('issue_id', ISSUE_ID);
-  if (error) throw error;
+    .eq('issue_id', ISSUE_ID)
+    .order('image_id').order('voter_name'));
 
   const result: Record<string, Set<string>> = {};
-  for (const row of data ?? []) {
+  for (const row of data) {
     if (!result[row.voter_name]) result[row.voter_name] = new Set();
     result[row.voter_name].add(row.image_id);
   }
@@ -305,15 +323,15 @@ export async function setVotingOpen(isOpen: boolean) {
 // ── PAIRS ─────────────────────────────────────────────────────
 
 export async function loadPairs() {
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await fetchAll<any>(() => supabase
     .from('pairs')
     .select('*')
     .eq('issue_id', ISSUE_ID)
-    .order('created_at', { ascending: true });
-  if (error) throw error;
+    .order('created_at', { ascending: true }).order('id'));
 
   // Reshape to match Oscar's internal pair format
-  return (data ?? []).map(p => ({
+  return data.map(p => ({
     id: p.id,
     a: { id: p.image_a_id, side: p.side_a, size: p.size_a },
     b: { id: p.image_b_id, side: p.side_b, size: p.size_b },
@@ -386,13 +404,14 @@ export type PromptEdit = {
 };
 
 export async function loadPromptEdits(): Promise<Record<string, PromptEdit>> {
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await fetchAll<any>(() => supabase
     .from('prompt_edits')
     .select('image_id, claude_body, edited_body, params, flagged, flag_reason')
-    .eq('issue_id', ISSUE_ID);
-  if (error) throw error;
+    .eq('issue_id', ISSUE_ID)
+    .order('image_id'));
   return Object.fromEntries(
-    (data ?? []).map(r => [r.image_id, {
+    data.map(r => [r.image_id, {
       imageId: r.image_id,
       claudeBody: r.claude_body,
       editedBody: r.edited_body ?? null,
@@ -446,13 +465,13 @@ function extractBodyLenient(claudeBody: string | null): string | null {
 }
 
 export async function cleanPromptEditBodies(): Promise<number> {
-  const { data, error } = await supabase
+  const data = await fetchAll<{ image_id: string; claude_body: string }>(() => supabase
     .from('prompt_edits')
     .select('image_id, claude_body')
-    .eq('issue_id', ISSUE_ID);
-  if (error) throw error;
+    .eq('issue_id', ISSUE_ID)
+    .order('image_id'));
 
-  const dirty = (data ?? [])
+  const dirty = data
     .map(r => ({ image_id: r.image_id, body: extractBodyLenient(r.claude_body) }))
     .filter(r => r.body !== null);
 
