@@ -25,7 +25,10 @@ Internal curation tool for a Midjourney magazine. Three users (Daniel, Hongrae, 
 
 ## Print pipeline (runs on Daniel's Mac only)
 
-`scripts/oscar_pipeline.sh <pairs.json>` downloads full-res images from the MJ CDN (`download_images.py`, auth via Arc browser cookies), upscales 4x with Real-ESRGAN (`~/tools/realesrgan/`), and drives Photoshop (`convert_both.jsx`) to output two CMYK folders: `HH Links/` (SWOP, US press) and `KOPA Links/` (PSO, Euro press). Then in InDesign, `place_oscar_pairs.jsx` places pairs + prompts into the template and `place_qr_codes.jsx` adds QR codes (reads `<doc folder>/QR Codes/` and the pairs JSON beside the .indd; nothing to edit per issue, but the .indd must be saved in the issue folder).
+`scripts/oscar_pipeline.sh <pairs.json>` downloads full-res images from the MJ CDN (`download_images.py`, auth via Arc browser cookies), upscales 4x with Real-ESRGAN (`~/tools/realesrgan/`), and drives Photoshop (`convert_both.jsx`) to output two CMYK folders: `HH Links/` (SWOP, US press) and `KOPA Links/` (PSO, Euro press). Then in InDesign, `place_oscar_pairs.jsx` places pairs + prompts into the template and, in the same run and undo step, chains `rag_prompts.jsx` (new pages only) and `place_qr_codes.jsx`, which creates the QR PNGs (Python `qrcode` via `do shell script`, same settings as Issue 42), links and places them in `<doc folder>/QR Codes/`. The .indd must be saved in the issue folder. All three stay runnable on their own for touch-ups.
+
+- The insert-after prompt takes a page *name* from the Pages panel. InDesign's `pages.itemByName()` and JPEG `pageString` count absolute positions, and the cover pages (116, 117, 1) come first in document order, so match on `page.name` yourself.
+- InDesign's ExtendScript cannot write to `/tmp` on this Mac; use `Folder.temp`.
 
 - InDesign executes the copy in `~/Library/Preferences/Adobe InDesign/.../Scripts Panel/`, not the repo. After editing a placement script, copy it there — the repo copy is canonical; copies have drifted before.
 - Daily-theme projects skip the pipeline and placement entirely (browser-side JPG zip download from the Export tab).

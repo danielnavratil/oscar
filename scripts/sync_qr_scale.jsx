@@ -7,15 +7,25 @@
 // placed image inside each frame moves/scales.
 //
 // Set $.global.OSCAR_QRSYNC = { from, to, quiet } (document names).
-// Defaults to KOPA → HH for the current issue. One undoable action.
+// Defaults to KOPA → HH for the issue of the active document (MJ_<N>.indd
+// or "MJ_<N> KOPA.indd"; both must be open). One undoable action.
 // ───────────────────────────────────────────────────────────────
 
 #target indesign
 
 function syncQrScale() {
     var preset = $.global.OSCAR_QRSYNC || {};
-    var FROM  = preset.from || "MJ_42 KOPA.indd";
-    var TO    = preset.to   || "MJ_42.indd";
+    // issue number from the active document's name, so nothing is edited per issue
+    var issueNo = null;
+    if (app.documents.length) {
+        var m = String(app.activeDocument.name).match(/^MJ_(\d+)/);
+        if (m) issueNo = m[1];
+    }
+    if (!(preset.from && preset.to) && !issueNo) {
+        alert("Make MJ_<N>.indd or \"MJ_<N> KOPA.indd\" the active document first."); return;
+    }
+    var FROM  = preset.from || ("MJ_" + issueNo + " KOPA.indd");
+    var TO    = preset.to   || ("MJ_" + issueNo + ".indd");
     var quiet = preset.quiet === true;
     var QR_LABEL = "oscar_qr";
 

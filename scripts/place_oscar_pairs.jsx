@@ -2,14 +2,25 @@
 // place_oscar_pairs.jsx
 // Reads the Oscar pairs JSON and the CMYK image folder, then
 // places every paired image and prompt into the active InDesign
-// document. Asks which page to insert after; new pages are spliced
-// in there, so the closing spread stays intact at the end.
+// document. Asks which page to insert after (by its name in the
+// Pages panel); new pages are spliced in there, so the closing
+// spread stays intact at the end.
 //
-// Run via File → Scripts → Browse on the open template document.
+// Then, in the same run, it rags the new prompts (rag_prompts.jsx)
+// and creates, links and places the QR codes (place_qr_codes.jsx),
+// both loaded from this script's own folder. The document must be
+// saved in its issue folder for the QR step (QR Codes/ goes there).
+//
+// Run from the Scripts panel on the open issue document.
 // The entire run is one undoable action (Cmd+Z reverts it all).
+// Preset for automation: $.global.OSCAR_PRESET = { docName, jsonPath,
+// imagesFolder, afterPage (page name), autoConfirm, quiet, rag, qr }
+// — rag:false / qr:false skip those follow-up steps.
 // ───────────────────────────────────────────────────────────────
 
 #target indesign
+
+var OSCAR_PAIRS_DIR = File($.fileName).parent;   // rag_prompts.jsx + place_qr_codes.jsx live here too
 
 function placeOscarPairs() {
     // ── CONFIG ─────────────────────────────────────────────────
@@ -44,11 +55,13 @@ function placeOscarPairs() {
         alert("Open the InDesign template document first.");
         return;
     }
-    var doc = app.activeDocument;
-
-    // Optional preset for automation (set via $.global.OSCAR_PRESET before eval):
-    // { jsonPath, imagesFolder, afterPage, autoConfirm, quiet } — skips the matching dialogs.
+    // Optional preset for automation (set via $.global.OSCAR_PRESET before eval) — see header.
     var preset = $.global.OSCAR_PRESET || {};
+    var doc = app.activeDocument;
+    if (preset.docName) {
+        doc = app.documents.itemByName(preset.docName);
+        if (!doc.isValid) { alert(preset.docName + " is not open."); return; }
+    }
 
     var jsonFile = preset.jsonPath ? new File(preset.jsonPath)
                                    : File.openDialog("Select Oscar pairs JSON", "*.json");
@@ -151,21 +164,43 @@ function placeOscarPairs() {
     // ── WHERE TO INSERT ────────────────────────────────────────
     // New pages are spliced in after the chosen page, so everything after it
     // (the closing spread) slides back untouched instead of being placed over.
-    var defaultAfter = doc.pages.length - 3; // default keeps the last 3 pages (inside back cover spread)
+    // The answer is a page NAME as shown in the Pages panel: the cover pages
+    // (116, 117, 1) come first in document order, so a position count would
+    // land two pages early. (pages.itemByName counts positions too, so match
+    // on .name ourselves.)
+    var closing = doc.spreads.lastItem().pages.firstItem();
+    var defaultAfter = closing.documentOffset > 0 ? doc.pages.item(closing.documentOffset - 1) : doc.pages.lastItem();
     var input = preset.afterPage != null ? String(preset.afterPage)
-              : prompt("Insert pair spreads AFTER page:\n(everything after that page moves back unchanged)", String(defaultAfter));
+              : prompt("Insert pair spreads AFTER page (as numbered in the Pages panel):\n(everything after that page moves back unchanged)", defaultAfter.name);
     if (input === null) return;
-    var afterPage = parseInt(input, 10);
-    if (isNaN(afterPage) || afterPage < 1 || afterPage > doc.pages.length) {
-        alert("Page must be between 1 and " + doc.pages.length + "."); return;
+    input = input.replace(/^\s+|\s+$/g, "");
+    var afterPg = null, sameName = 0, allPgs = doc.pages.everyItem().getElements();
+    for (var q = 0; q < allPgs.length; q++) {
+        if (allPgs[q].name !== input) continue;
+        if (!afterPg) afterPg = allPgs[q];
+        sameName++;
+    }
+    if (!afterPg) { alert("There is no page \"" + input + "\" in this document."); return; }
+    if (sameName > 1) { alert("More than one page is named \"" + input + "\" (sections restart numbering) — renumber, or pick another page."); return; }
+    var afterPage = afterPg.documentOffset + 1;        // 1-based position in document order
+    var nextPg = doc.pages.item(afterPage);            // the page that currently follows it
+    // Each pair needs its spread to start on a left-hand page; check before inserting anything
+    var startsLeft = nextPg.isValid ? nextPg.side === PageSideOptions.LEFT_HAND
+                                    : afterPg.side === PageSideOptions.RIGHT_HAND;
+    if (!startsLeft) {
+        var prevPg = doc.pages.item(afterPage - 2);
+        alert("Inserting after page " + afterPg.name + " would start the pairs on a right-hand page, " +
+              "so every pair would straddle two spreads.\n\nPick page " +
+              (prevPg.isValid ? prevPg.name + " or " : "") + (nextPg.isValid ? nextPg.name : "another page") + " instead.");
+        return;
     }
     var START_PAGE = afterPage + 1;
     var newPages = pairs.length * 2;
 
     if (!preset.autoConfirm && !confirm("Place " + totalImages + " images across " + pairs.length + " spreads?\n\n" +
-                 newPages + " pages will be inserted after page " + afterPage +
-                 " (pages " + START_PAGE + "–" + (afterPage + newPages) + "); the " +
-                 (doc.pages.length - afterPage) + " page(s) after that move back unchanged.")) return;
+                 newPages + " pages will be inserted after page " + afterPg.name + "; the " +
+                 (doc.pages.length - afterPage) + " page(s) after it move back unchanged.\n\n" +
+                 "Then the new prompts get ragged and the QR codes are made and placed.")) return;
 
     // ── INSERT PAGES (spliced in, not appended at the end) ─────
     var anchor = doc.pages.item(afterPage - 1);
@@ -174,9 +209,8 @@ function placeOscarPairs() {
     }
     // Each pair assumes its spread starts on a left-hand page
     if (doc.pages.item(START_PAGE - 1).side !== PageSideOptions.LEFT_HAND) {
-        alert("Page " + START_PAGE + " is not a left-hand page, so every pair would straddle two spreads.\n" +
-              "Cmd+Z to undo the inserted pages, then re-run and insert after page " +
-              (afterPage - 1) + " or " + (afterPage + 1) + " instead.");
+        alert("The first inserted page is not a left-hand page, so every pair would straddle two spreads.\n" +
+              "Cmd+Z to undo the inserted pages, then re-run and insert after a different page.");
         return;
     }
 
@@ -269,11 +303,12 @@ function placeOscarPairs() {
         return b;
     }
 
-    function placeText(page, bounds, username, body) {
+    function placeText(page, bounds, username, body, imageId) {
         var tf = page.textFrames.add({
             geometricBounds: [bounds.top, bounds.left, bounds.bottom, bounds.right]
         });
         tf.label = "oscar_prompt";   // rag_prompts.jsx finds frames by this
+        if (imageId) tf.insertLabel("oscar_image_id", imageId);   // place_qr_codes.jsx matches by this
         tf.textFramePreferences.autoSizingType = AutoSizingTypeEnum.HEIGHT_ONLY;
         // anchor at the bottom: frames grow upward, so every prompt's bottom edge stays on PROMPT_BOTTOM
         tf.textFramePreferences.autoSizingReferencePoint = AutoSizingReferenceEnum.BOTTOM_LEFT_POINT;
@@ -344,10 +379,10 @@ function placeOscarPairs() {
                     var oppSide = (side === "L") ? "R" : "L";
                     var oppPage = (side === "L") ? rightPage : leftPage;
                     placeText(oppPage, displacedPromptBounds(oppSide),
-                              d.data.username, d.data.cleanedPrompt || d.data.rawPrompt);
+                              d.data.username, d.data.cleanedPrompt || d.data.rawPrompt, d.data.id);
                 } else {
                     placeText(d.page, nativePromptBounds(side),
-                              d.data.username, d.data.cleanedPrompt || d.data.rawPrompt);
+                              d.data.username, d.data.cleanedPrompt || d.data.rawPrompt, d.data.id);
                 }
             } catch (e) {
                 errors.push("Pair " + pair.pair + " " + side + " prompt: " + e.message);
@@ -360,9 +395,44 @@ function placeOscarPairs() {
     doc.viewPreferences.verticalMeasurementUnits   = saved.v;
     doc.viewPreferences.rulerOrigin                = saved.r;
 
+    var firstName = doc.pages.item(START_PAGE - 1).name;
+    var lastName  = doc.pages.item(START_PAGE - 2 + newPages).name;
+    var newPageNames = [];
+    for (var np = 0; np < newPages; np++) newPageNames.push(doc.pages.item(START_PAGE - 1 + np).name);
+
+    // ── FOLLOW-UPS: rag the new prompts, then QR codes ─────────
+    // Each is its own script next to this one, run quietly against this doc;
+    // they stay usable on their own for touch-ups and re-runs.
+    function runSibling(name, globals) {
+        var f = new File(OSCAR_PAIRS_DIR.fsName + "/" + name);
+        if (!f.exists) return name + " not found next to place_oscar_pairs.jsx — run it by hand.";
+        var k;
+        try {
+            for (k in globals) $.global[k] = globals[k];
+            return String($.evalFile(f));
+        } catch (e) {
+            return name + " failed: " + e.message + " — run it by hand.";
+        } finally {
+            for (k in globals) $.global[k] = undefined;
+        }
+    }
+    var ragMsg = null, qrMsg = null;
+    if (placed > 0 && preset.rag !== false) {
+        ragMsg = runSibling("rag_prompts.jsx", {
+            OSCAR_RAG_QUIET: true, OSCAR_RAG_DOC: doc.name, OSCAR_RAG_PAGES: newPageNames });
+    }
+    if (placed > 0 && preset.qr !== false) {
+        qrMsg = runSibling("place_qr_codes.jsx", {
+            OSCAR_QR_PRESET: { docName: doc.name, jsonPath: jsonFile.fsName, quiet: true } });
+    }
+
     // ── REPORT ─────────────────────────────────────────────────
-    var msg = "Placed " + placed + " images across " + pairs.length + " spreads.";
+    var msg = "Placed " + placed + " images across " + pairs.length + " spreads (pages " +
+              firstName + "–" + lastName + ").";
     if (errors.length) msg += "\n\nErrors (" + errors.length + "):\n" + errors.join("\n");
+    if (ragMsg !== null) msg += "\n\nRAG: " + ragMsg;
+    if (qrMsg !== null)  msg += "\n\nQR: " + qrMsg;
+    msg += "\n\nCmd+Z once undoes all of it.";
     if (preset.quiet) return msg;
     alert(msg);
 }

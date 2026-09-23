@@ -20,7 +20,9 @@
 // Run AFTER place_oscar_pairs.jsx and BEFORE place_qr_codes.jsx.
 // One undoable action. Set $.global.OSCAR_RAG_QUIET = true to get the
 // report as the script result instead of an alert; set
-// $.global.OSCAR_RAG_PAGES = ["12","13"] to touch up only those pages.
+// $.global.OSCAR_RAG_PAGES = ["12","13"] to touch up only those pages;
+// $.global.OSCAR_RAG_DOC = "<name>.indd" to target a document other
+// than the active one (place_oscar_pairs.jsx chains this script).
 // ───────────────────────────────────────────────────────────────
 
 #target indesign
@@ -50,6 +52,10 @@ function ragPrompts() {
 
     if (app.documents.length === 0) { alert("Open the placed document first."); return; }
     var doc = app.activeDocument;
+    if ($.global.OSCAR_RAG_DOC) {
+        doc = app.documents.itemByName($.global.OSCAR_RAG_DOC);
+        if (!doc.isValid) { var gone = $.global.OSCAR_RAG_DOC + " is not open."; if (quiet) return gone; alert(gone); return; }
+    }
 
     // ── UNITS: page-relative inches ────────────────────────────
     var saved = {
