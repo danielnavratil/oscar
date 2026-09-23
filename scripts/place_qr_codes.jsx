@@ -9,9 +9,11 @@
 // run it by hand to redo the QR codes on an already-placed document.
 //
 // Creating: the PNGs are made with Python's qrcode library (medium error
-// correction, 1800 px, 4-module quiet zone, grayscale — same as Issue 42),
-// called through a shell. A file is only rewritten when it is missing or its
-// link changed (QR Codes/.qr_manifest.json remembers what each one encodes).
+// correction, 40 px per module, grayscale), called through a shell. They have
+// NO white quiet-zone border, so a proportional fit is flush: the code fills
+// its frame edge to edge (the white page and the template's spacer above give
+// the scanning margin). A file is only rewritten when it is missing, its link
+// changed, or the settings changed (QR Codes/.qr_manifest.json records both).
 // Needs `pip3 install qrcode pillow` for /usr/local/bin/python3 or similar.
 //
 // For each entry it then:
@@ -120,10 +122,13 @@ function placeQrCodes() {
             "folder = lines[0]",
             "os.makedirs(folder, exist_ok=True)",
             "man_path = os.path.join(folder, '.qr_manifest.json')",
+            "SETTINGS = 'ecM box40 border0'",
             "try:",
             "    man = json.load(open(man_path))",
             "except Exception:",
             "    man = {}",
+            "if man.get('_settings') != SETTINGS:",
+            "    man = {'_settings': SETTINGS}",
             "made = kept = 0",
             "for line in lines[1:]:",
             "    if not line: continue",
@@ -131,7 +136,7 @@ function placeQrCodes() {
             "    path = os.path.join(folder, name)",
             "    if os.path.exists(path) and man.get(name) == url:",
             "        kept += 1; continue",
-            "    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, box_size=40, border=4)",
+            "    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, box_size=40, border=0)",
             "    qr.add_data(url); qr.make(fit=True)",
             "    qr.make_image(fill_color='black', back_color='white').convert('L').save(path)",
             "    man[name] = url; made += 1",
