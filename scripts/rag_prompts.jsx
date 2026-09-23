@@ -21,7 +21,10 @@
 // prompt and the page is re-seated the way place_qr_codes.jsx does it, so
 // this can run before or after the QR step.
 // Selection mode ($.global.OSCAR_RAG_FRAMES = [frames], set by
-// rag_selected.jsx): only those frames are re-ragged. A partner prompt on
+// rag_selected.jsx): only those frames are re-ragged, and each stays near
+// the width it already has (you set it by hand): only widths within
+// NEAR_WIN of it are tried, and among the good rags the one closest to the
+// current width wins. A partner prompt on
 // the same page keeps its width and line breaks and only moves to keep the
 // pair layout; a frame that isn't a placed prompt is ragged in place (left
 // and bottom edges kept).
@@ -48,6 +51,7 @@ function ragPrompts() {
     var TARGET2 = (AVAIL - GAP) / 2;        // ideal per-frame width in a pair (~3.6")
     var TRACK   = 10;                       // tracking nudge cap
     var TOL     = 0.02;                     // line-end distance from mean before nudging
+    var NEAR_WIN = 0.25;                    // selection mode: widths tried either side of the current one
     var LABEL   = "oscar_prompt";
     var quiet   = $.global.OSCAR_RAG_QUIET === true;
     var pagesFilter = null;
@@ -179,13 +183,14 @@ function ragPrompts() {
         }
         return samples;
     }
-    function bestSolo(curve) { // best rag; among still-good widths, closest to half a page
+    function bestSolo(curve, target) { // best rag; among still-good widths, closest to target (default half a page)
+        if (target == null) target = TARGET;
         var min = null, k;
         for (k = 0; k < curve.length; k++) if (min === null || curve[k].s < min) min = curve[k].s;
         var pick = null, bd = null;
         for (k = 0; k < curve.length; k++) {
             if (curve[k].s > min + BAND) continue;
-            var d = Math.abs(curve[k].w - TARGET);
+            var d = Math.abs(curve[k].w - target);
             if (pick === null || d < bd - 1e-9 ||
                 (Math.abs(d - bd) <= 1e-9 && curve[k].w > pick.w)) { pick = curve[k]; bd = d; }
         }
@@ -335,8 +340,9 @@ function ragPrompts() {
         scoreFrom = f.paragraphs.length > 1 ? 1 : 0;
         f.texts.item(0).tracking = 0;
         for (var pi = scoreFrom; pi < f.paragraphs.length; pi++) f.paragraphs.item(pi).balanceRaggedLines = true;
-        var maxW = Math.max(curW, OUTER_M - left), minW = Math.min(MIN_W, maxW);
-        var pick = bestSolo(buildCurve(f, minW, maxW));
+        var maxW = Math.min(Math.max(curW, OUTER_M - left), curW + NEAR_WIN);
+        var minW = Math.max(0.5, curW - NEAR_WIN);
+        var pick = bestSolo(buildCurve(f, minW, maxW), curW);
         setWidth(f, pick.w);
         trackFrame(f);
         tighten(f);
@@ -357,6 +363,9 @@ function ragPrompts() {
         // fixed left-right order from current positions — never swapped
         group.sort(function (a, b2) { return a.geometricBounds[1] - b2.geometricBounds[1]; });
         var att = qrAttachments(group);   // before anything moves
+        var curW = {};                     // widths as found (selection mode rags near them)
+        for (g = 0; g < group.length; g++) curW[group[g].id] = group[g].geometricBounds[3] - group[g].geometricBounds[1];
+        var nearLo = function (f) { return Math.max(0.5, curW[f.id] - NEAR_WIN); };
 
         for (g = 0; g < group.length; g++) {
             if (!isTarget(group[g])) continue;       // a kept partner keeps its tracking too
@@ -373,15 +382,21 @@ function ragPrompts() {
             var tP = tT === group[0] ? group[1] : group[0];
             var wP = tP.geometricBounds[3] - tP.geometricBounds[1];
             var nP = ragScore(tP).n;
-            var room = Math.max(MIN_W, AVAIL - GAP - wP);
-            var curveT = buildCurve(tT, Math.min(MIN_W, room), room);
-            var LINE_COST1 = 0.05, pickT = null, costT = null, devT = null;
-            for (var ct = 0; ct < curveT.length; ct++) {
-                var cst = curveT[ct].s + LINE_COST1 * Math.max(curveT[ct].n, nP);
-                var dv = Math.abs(curveT[ct].w - TARGET2);
-                if (pickT === null || cst < costT - 0.02 || (cst <= costT + 0.02 && dv < devT - 1e-9)) {
-                    pickT = curveT[ct]; costT = cst; devT = dv;
-                }
+            var room = AVAIL - GAP - wP;
+            var hiT = Math.max(nearLo(tT), Math.min(room, curW[tT.id] + NEAR_WIN));
+            var curveT = buildCurve(tT, Math.min(nearLo(tT), hiT), hiT);
+            // cost as in the joint split; any width within BAND of the best cost
+            // counts as good, and the good one closest to the hand-set width wins
+            var LINE_COST1 = 0.05, pickT = null, devT = null, minCost = null, ct;
+            var costs = [];
+            for (ct = 0; ct < curveT.length; ct++) {
+                costs.push(curveT[ct].s + LINE_COST1 * Math.max(curveT[ct].n, nP));
+                if (minCost === null || costs[ct] < minCost) minCost = costs[ct];
+            }
+            for (ct = 0; ct < curveT.length; ct++) {
+                if (costs[ct] > minCost + BAND) continue;
+                var dv = Math.abs(curveT[ct].w - curW[tT.id]);
+                if (pickT === null || dv < devT - 1e-9) { pickT = curveT[ct]; devT = dv; }
             }
             setWidth(tT, pickT.w);
             trackFrame(tT);
@@ -390,7 +405,9 @@ function ragPrompts() {
             oneOfPair++;
         } else if (group.length === 1) {
             tf = group[0];
-            var pick = bestSolo(buildCurve(tf, MIN_W, AVAIL));
+            var pick = targetIds
+                ? bestSolo(buildCurve(tf, nearLo(tf), Math.max(nearLo(tf), Math.min(AVAIL, curW[tf.id] + NEAR_WIN))), curW[tf.id])
+                : bestSolo(buildCurve(tf, MIN_W, AVAIL));
             setWidth(tf, pick.w);
             trackFrame(tf);
             tighten(tf);
@@ -399,8 +416,9 @@ function ragPrompts() {
         } else if (group.length === 2) {
             var tfL = group[0], tfR = group[1];
             var maxW = AVAIL - GAP - MIN_W;
-            var curveL = buildCurve(tfL, MIN_W, maxW);
-            var curveR = buildCurve(tfR, MIN_W, maxW);
+            var curveL = targetIds ? buildCurve(tfL, nearLo(tfL), Math.max(nearLo(tfL), Math.min(maxW, curW[tfL.id] + NEAR_WIN))) : buildCurve(tfL, MIN_W, maxW);
+            var curveR = targetIds ? buildCurve(tfR, nearLo(tfR), Math.max(nearLo(tfR), Math.min(maxW, curW[tfR.id] + NEAR_WIN))) : buildCurve(tfR, MIN_W, maxW);
+            var idealL = targetIds ? curW[tfL.id] : TARGET2, idealR = targetIds ? curW[tfR.id] : TARGET2;
             // joint split over both frames' curves.
             var a, c;
             // composite cost: rag quality + height of the taller frame (0.05" of
@@ -408,18 +426,34 @@ function ragPrompts() {
             // wide one); near-ties go to widths closest to the per-frame ideal
             var LINE_COST = 0.05;
             var best = null, bestCost = null, bestDev = null;
+            if (targetIds) {
+                // both frames selected: good = within BAND of the best cost, then closest to the hand-set widths
+                var combos = [], minC = null, cb;
+                for (a = 0; a < curveL.length; a++) for (c = 0; c < curveR.length; c++) {
+                    if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) continue;
+                    var cc = curveL[a].s + curveR[c].s + LINE_COST * Math.max(curveL[a].n, curveR[c].n);
+                    combos.push({ L: curveL[a], R: curveR[c], cost: cc });
+                    if (minC === null || cc < minC) minC = cc;
+                }
+                for (cb = 0; cb < combos.length; cb++) {
+                    if (combos[cb].cost > minC + BAND) continue;
+                    var dvv = Math.abs(combos[cb].L.w - idealL) + Math.abs(combos[cb].R.w - idealR);
+                    if (best === null || dvv < bestDev - 1e-9) { best = combos[cb]; bestDev = dvv; }
+                }
+            } else
             for (a = 0; a < curveL.length; a++) {
                 for (c = 0; c < curveR.length; c++) {
                     if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
                     var cost = curveL[a].s + curveR[c].s +
                                LINE_COST * Math.max(curveL[a].n, curveR[c].n);
-                    var dev = Math.abs(curveL[a].w - TARGET2) + Math.abs(curveR[c].w - TARGET2);
+                    var dev = Math.abs(curveL[a].w - idealL) + Math.abs(curveR[c].w - idealR);
                     if (best === null || cost < bestCost - 0.02 ||
                         (cost <= bestCost + 0.02 && dev < bestDev - 1e-9)) {
                         best = { L: curveL[a], R: curveR[c] }; bestCost = cost; bestDev = dev;
                     }
                 }
             }
+            if (!best) best = { L: { w: curW[tfL.id] }, R: { w: curW[tfR.id] } };   // windows can't fit side by side: keep widths
             setWidth(tfL, best.L.w);
             setWidth(tfR, best.R.w);
             trackFrame(tfL); trackFrame(tfR);

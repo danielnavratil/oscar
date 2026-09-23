@@ -2,7 +2,9 @@
 // rag_selected.jsx
 // Re-rags only the selected frame(s): select a prompt frame, or click into
 // its text, then run this from the Scripts panel. Uses rag_prompts.jsx
-// (same folder) in selection mode, so the ragging rules are identical:
+// (same folder) in selection mode. Each frame is ragged near the width it
+// already has (you set it by hand): widths within 1/4" of it are tried, the
+// good rag closest to your width wins, then the frame hugs its text.
 //   • a prompt alone on its page gets the full width search and is
 //     re-anchored to the bottom outer corner,
 //   • one prompt of a pair: the other prompt keeps its width and line
