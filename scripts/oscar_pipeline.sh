@@ -4,11 +4,13 @@
 # Full image pipeline in one command:
 #   1. Download full-res images from Midjourney CDN
 #   2. Upscale 4x with Real-ESRGAN
-#   3. Convert to two CMYK profiles via Photoshop
+#   3. Convert to two CMYK profiles with convert_cmyk.py (LittleCMS, no
+#      Photoshop, ~1 min per issue; within ~1 ΔE of Photoshop's output)
 #
 # Usage:
 #   ./oscar_pipeline.sh oscar-issue-38-pairs.json
-#   ./oscar_pipeline.sh oscar-issue-38-pairs.json --test   (3 images only)
+#   ./oscar_pipeline.sh oscar-issue-38-pairs.json --test        (3 images only)
+#   ./oscar_pipeline.sh oscar-issue-38-pairs.json --photoshop   (old step 3: convert_both.jsx in Photoshop)
 #
 # Output (next to the JSON file):
 #   <name>-output/downloads   → full-res .webp from CDN
@@ -25,12 +27,15 @@ REALESRGAN_MODELS="$HOME/tools/realesrgan/models"
 MODEL="realesrgan-x4plus"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 JSX="$SCRIPT_DIR/convert_both.jsx"
+CONVERT_PY="$SCRIPT_DIR/convert_cmyk.py"
 DOWNLOAD_PY="$SCRIPT_DIR/download_images.py"
 
 # ── ARGS ──────────────────────────────────────────────────────
 PAIRS_JSON="$1"
 TEST_FLAG=""
 if [[ "$*" == *"--test"* ]]; then TEST_FLAG="--test"; fi
+USE_PHOTOSHOP=0
+if [[ "$*" == *"--photoshop"* ]]; then USE_PHOTOSHOP=1; fi
 
 if [ -z "$PAIRS_JSON" ]; then
   echo "Usage: ./oscar_pipeline.sh <pairs.json> [--test]"
@@ -105,6 +110,11 @@ echo "Upscale complete: $((TOTAL - SKIPPED)) processed, $SKIPPED skipped."
 echo ""
 
 # ── 3. CMYK CONVERSION ───────────────────────────────────────
+if [ "$USE_PHOTOSHOP" -eq 0 ]; then
+echo "[3/3] Converting to CMYK (HH: SWOP v2, KOPA: PSO Coated v3)..."
+# a failed image is reported and leaves the counts short, so cleanup below keeps upscaled/
+python3 "$CONVERT_PY" "$UPSCALED" "$OUTDIR" || true
+else
 echo "[3/3] Converting to CMYK via Photoshop..."
 echo "$UPSCALED" > /tmp/oscar_convert_folder.txt
 
@@ -125,6 +135,7 @@ with timeout of 3600 seconds
     end tell
 end timeout
 END
+fi
 
 # ── CLEANUP: drop upscaled intermediates (~6GB/issue) once conversion is
 # verified complete — both Links folders must hold a JPEG per downloaded image.
