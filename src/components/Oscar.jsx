@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import JSZip from "jszip";
 import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, loadCoverPicks, addCoverPick, removeCoverPick, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject, upsertIssue } from "@/lib/db";
 
@@ -149,6 +149,24 @@ function mechClean(rawPrompt) {
   body = body.replace(/\s+/g, " ").trim();
   body = body.replace(/^[\s,]+|[\s,]+$/g, "").trim();
   return { body, params: paramLine };
+}
+
+// no --v/--niji in a prompt means it was made on MJ's default (latest) model:
+// the newest --v the project had seen by that image's time. Returns { imageId: "--v 8.2" }.
+function defaultModels(images) {
+  const sorted = [...images].sort((a,b)=>new Date(a.enqueue_time)-new Date(b.enqueue_time));
+  const out = {}, early = [];
+  let latest = null;
+  for (const img of sorted) {
+    const p = img.prompt || "";
+    const v = p.match(/(?:^|\s)--(?:v|version)\s+(\d+(?:\.\d+)?)/)?.[1];
+    if (v && (!latest || parseFloat(v) > parseFloat(latest))) latest = v;
+    if (/(^|\s)--(v|version|niji)\b/.test(p)) continue;
+    if (latest) out[img.id] = `--v ${latest}`; else early.push(img.id);
+  }
+  // before the first versioned image: use the project's newest
+  if (latest) early.forEach(id => { out[id] = `--v ${latest}`; });
+  return out;
 }
 
 // CJK, Hangul, Cyrillic, Arabic, Hebrew, Thai, Devanagari — prompts in these scripts
@@ -453,10 +471,8 @@ export default function App() {
     try {
       const { body: mechBody, params } = mechClean(img.prompt);
       if (!mechBody) return;
-      const noModel = !/(^|\s)--(v|niji)\b/.test(params);
-      const addNoModel = reason => noModel ? (reason ? `${reason}; no model version in prompt` : "no model version in prompt") : reason;
       if (NON_LATIN_RE.test(mechBody)) {
-        const edit = { imageId: img.id, claudeBody: mechBody, editedBody: null, params, flagged: true, flagReason: addNoModel("non-english prompt — original text kept") };
+        const edit = { imageId: img.id, claudeBody: mechBody, editedBody: null, params, flagged: true, flagReason: "non-english prompt — original text kept" };
         await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
         setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
         return;
@@ -494,8 +510,7 @@ export default function App() {
           claudeBody = text.toLowerCase().trim();
         }
       }
-      if (noModel) flagged = true;
-      const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason: addNoModel(flagReason) };
+      const edit = { imageId: img.id, claudeBody, editedBody: null, params, flagged, flagReason };
       await upsertPromptEdit({ ...edit, rawPrompt: img.prompt });
       setPromptEdits(prev => ({ ...prev, [img.id]: edit }));
     } catch (e) {
@@ -1741,8 +1756,24 @@ function extractPromptBody(text) {
   return stripped;
 }
 
+// ── FLAG MARKER ────────────────────────────────────────────────
+// orange square; hovering shows the reason instantly (native title tooltips lag and are tiny)
+function FlagMarker({ reason, size, top, right }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}
+      style={{position:"absolute",top,right,width:size,height:size,background:"#d97706",cursor:"default",zIndex:5}}>
+      {show&&(
+        <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,width:260,background:"var(--sf)",border:"1px solid #d97706",padding:"10px 12px",fontSize:13,lineHeight:1.45,color:"var(--tx)",boxShadow:"0 4px 16px rgba(0,0,0,.12)",zIndex:300,pointerEvents:"none"}}>
+          {reason||"flagged for review"}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PROMPT CELL ────────────────────────────────────────────────
-function PromptCell({ imageId, promptEdits, onSave }) {
+function PromptCell({ imageId, promptEdits, onSave, model }) {
   const edit = promptEdits?.[imageId];
   const effective = edit ? (edit.editedBody ?? extractPromptBody(edit.claudeBody)) : null;
   const [editing, setEditing] = useState(false);
@@ -1774,9 +1805,7 @@ function PromptCell({ imageId, promptEdits, onSave }) {
 
   return (
     <div onDoubleClick={startEdit} style={{cursor:"text",position:"relative"}}>
-      {edit.flagged && (
-        <div style={{position:"absolute",top:0,right:0,width:8,height:8,background:"#d97706",cursor:"default",flexShrink:0}} title={edit.flagReason||"flagged for review"}/>
-      )}
+      {edit.flagged && <FlagMarker reason={edit.flagReason} size={8} top={0} right={0}/>}
       <div style={{
         fontSize:9,
         color:"var(--tx2)",
@@ -1786,7 +1815,7 @@ function PromptCell({ imageId, promptEdits, onSave }) {
       }}>
         {effective}
       </div>
-      {edit.params&&<div style={{fontSize:8,color:"var(--tx3)",marginTop:3,fontFamily:"'DM Mono',monospace"}}>{edit.params}</div>}
+      {(model||edit.params)&&<div style={{fontSize:8,color:"var(--tx3)",marginTop:3,fontFamily:"'DM Mono',monospace"}}>{[model,edit.params].filter(Boolean).join(" ")}</div>}
     </div>
   );
 }
@@ -1860,15 +1889,16 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
 
   // manual tags from the Collection tab win; otherwise detect from prompt syntax
   const getRefList = (img) => refTypes[img.id]?.length ? refTypes[img.id] : detectRefTypes(img.prompt);
+  const models = useMemo(() => defaultModels(images), [images]);
   const getCleanedPrompt = (img) => {
     const edit = promptEdits?.[img.id];
     if (edit) {
       const body = edit.editedBody ?? extractPromptBody(edit.claudeBody);
-      // ref tags share the params line, at its start
-      const tail = [getRefList(img).join(" + "), edit.params].filter(Boolean).join(" ");
+      // ref tags share the params line, at its start; model version leads the params
+      const tail = [getRefList(img).join(" + "), models[img.id], edit.params].filter(Boolean).join(" ");
       return [body, tail].filter(Boolean).join("\n");
     }
-    return cleanPrompt(img.prompt, getRefList(img));
+    return cleanPrompt(models[img.id] ? `${img.prompt} ${models[img.id]}` : img.prompt, getRefList(img));
   };
 
   const sortedPairs = [...pairs].sort(pairSortCmp(categories));
@@ -1978,15 +2008,13 @@ function ExportTab({ pairs, images, categories, votes, bookmarks, refTypes, prom
                         <img src={img.thumbnailUrl} alt="" loading="lazy"
                           style={{width:200,height:"auto",display:"block"}}
                           onError={e=>e.target.style.opacity=".2"}/>
-                        {promptEdits?.[img.id]?.flagged&&(
-                          <div style={{position:"absolute",top:8,right:8,width:12,height:12,background:"#d97706"}} title={promptEdits[img.id].flagReason||"flagged for review"}/>
-                        )}
+                        {promptEdits?.[img.id]?.flagged&&<FlagMarker reason={promptEdits[img.id].flagReason} size={12} top={8} right={8}/>}
                       </div>
                       <div style={{height:15}}/>
                       <div style={{fontSize:9,color:"var(--tx)",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",marginBottom:2}}>{img.side} · {img.size}</div>
                       <div style={{fontSize:9,color:"var(--tx2)",fontFamily:"'DM Mono',monospace"}}>@{img.username}</div>
                       <div style={{fontSize:8,color:"var(--tx3)",marginTop:1,textTransform:"capitalize",marginBottom:8}}>{img.category||"—"}</div>
-                      <PromptCell imageId={img.id} promptEdits={promptEdits} onSave={onEditSave}/>
+                      <PromptCell imageId={img.id} promptEdits={promptEdits} onSave={onEditSave} model={models[img.id]}/>
                     </div>
                   ))}
                 </div>

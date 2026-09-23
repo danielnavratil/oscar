@@ -410,15 +410,22 @@ export async function loadPromptEdits(): Promise<Record<string, PromptEdit>> {
     .select('image_id, claude_body, edited_body, params, flagged, flag_reason')
     .eq('issue_id', ISSUE_ID)
     .order('image_id'));
+  // rows processed before Sept 2026 carry a "no model version" flag; missing versions are
+  // now filled with the project's latest model at export, so drop that flag on load
+  const NO_MODEL = /(^|; )no model version in prompt$/;
   return Object.fromEntries(
-    data.map(r => [r.image_id, {
-      imageId: r.image_id,
-      claudeBody: r.claude_body,
-      editedBody: r.edited_body ?? null,
-      params: r.params ?? '',
-      flagged: r.flagged ?? false,
-      flagReason: r.flag_reason ?? null,
-    }])
+    data.map(r => {
+      const stale = NO_MODEL.test(r.flag_reason ?? '');
+      const flagReason = stale ? r.flag_reason.replace(NO_MODEL, '') || null : r.flag_reason ?? null;
+      return [r.image_id, {
+        imageId: r.image_id,
+        claudeBody: r.claude_body,
+        editedBody: r.edited_body ?? null,
+        params: r.params ?? '',
+        flagged: stale && !flagReason ? false : r.flagged ?? false,
+        flagReason,
+      }];
+    })
   );
 }
 
