@@ -30,7 +30,7 @@ Internal curation tool for a Midjourney magazine. Three users (Daniel, Hongrae, 
 - The insert-after prompt takes a page *name* from the Pages panel. InDesign's `pages.itemByName()` and JPEG `pageString` count absolute positions, and the cover pages (116, 117, 1) come first in document order, so match on `page.name` yourself.
 - InDesign's ExtendScript cannot write to `/tmp` on this Mac; use `Folder.temp`.
 
-- InDesign executes the copy in `~/Library/Preferences/Adobe InDesign/.../Scripts Panel/`, not the repo. After editing a placement script, copy it there — the repo copy is canonical; copies have drifted before.
+- InDesign executes the copies in `~/Library/Preferences/Adobe InDesign/Version 21.0/en_US/Scripts/Scripts Panel/Midjourney/`, not the repo. After editing a placement script, copy it there — the repo copy is canonical; copies have drifted before. Keep all the Oscar `.jsx` files together in that one folder: `place_oscar_pairs.jsx` loads `rag_prompts.jsx` and `place_qr_codes.jsx` from its own folder.
 - Daily-theme projects skip the pipeline and placement entirely (browser-side JPG zip download from the Export tab).
 
 ## Conventions
