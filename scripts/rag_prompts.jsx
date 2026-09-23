@@ -17,7 +17,14 @@
 // Frames are found by the "oscar_prompt" script label (placement now
 // tags them); untagged docs fall back to geometry detection of the
 // as-placed frames and tag them for re-runs.
-// Run AFTER place_oscar_pairs.jsx and BEFORE place_qr_codes.jsx.
+// QR codes already placed under prompts (label "oscar_qr") move with their
+// prompt and the page is re-seated the way place_qr_codes.jsx does it, so
+// this can run before or after the QR step.
+// Selection mode ($.global.OSCAR_RAG_FRAMES = [frames], set by
+// rag_selected.jsx): only those frames are re-ragged. A partner prompt on
+// the same page keeps its width and line breaks and only moves to keep the
+// pair layout; a frame that isn't a placed prompt is ragged in place (left
+// and bottom edges kept).
 // One undoable action. Set $.global.OSCAR_RAG_QUIET = true to get the
 // report as the script result instead of an alert; set
 // $.global.OSCAR_RAG_PAGES = ["12","13"] to touch up only those pages;
@@ -92,7 +99,22 @@ function ragPrompts() {
             frames.push(tf);
         }
     }
-    if (frames.length === 0) { restoreUnits(); alert("No prompt frames found."); return; }
+    // ── SELECTION MODE ─────────────────────────────────────────
+    var targetIds = null, inPlace = [];
+    if ($.global.OSCAR_RAG_FRAMES instanceof Array) {
+        targetIds = {};
+        var known = {};
+        for (i = 0; i < frames.length; i++) known[frames[i].id] = true;
+        for (i = 0; i < $.global.OSCAR_RAG_FRAMES.length; i++) {
+            var sf = $.global.OSCAR_RAG_FRAMES[i];
+            if (!sf || !sf.isValid) continue;
+            targetIds[sf.id] = true;
+            if (!known[sf.id] && sf.parentPage) inPlace.push(sf);   // not a placed prompt
+        }
+    }
+    function isTarget(f) { return !targetIds || targetIds[f.id] === true; }
+
+    if (frames.length === 0 && !inPlace.length) { restoreUnits(); alert("No prompt frames found."); return; }
 
     // ── GROUP BY PAGE ──────────────────────────────────────────
     var byPage = {}, order = [];
@@ -103,6 +125,7 @@ function ragPrompts() {
     }
 
     // ── MEASUREMENT HELPERS ────────────────────────────────────
+    var scoreFrom = 1;   // paragraph 0 is the username line; in-place frames may have none
     function lineEnd(line) {
         var chars = line.characters, n = chars.length;
         for (var c = n - 1; c >= 0; c--) {
@@ -119,7 +142,7 @@ function ragPrompts() {
         // beyond the longest non-final line (the long-last-line look) is penalized.
         var ps = tf.paragraphs, s = 0, n = 0;
         var packMax = null, finals = [];
-        for (var p = 1; p < ps.length; p++) {
+        for (var p = scoreFrom; p < ps.length; p++) {
             var ls = ps.item(p).lines, L = ls.length;
             n += L;
             for (var li = 0; li < L; li++) {
@@ -213,7 +236,7 @@ function ragPrompts() {
         }
     }
     function trackFrame(tf) { // body + params (+ ref line, harmless when single-line)
-        for (var p = 1; p < tf.paragraphs.length; p++) trackParagraph(tf, p);
+        for (var p = scoreFrom; p < tf.paragraphs.length; p++) trackParagraph(tf, p);
     }
 
     // ── TIGHTEN: shrink width to the longest line, no reflow ───
@@ -256,23 +279,116 @@ function ragPrompts() {
         tfR.geometricBounds = [top, xR, top + hR, xR + wR];
     }
 
+    // ── QR CODES: find the ones hanging under a page's prompts, re-seat after ──
+    // Compared and moved in spread coordinates (a group and a frame only share
+    // one coordinate space per spread); moves are relative, so origin-safe.
+    var qrGroups = [];
+    (function () {
+        var gs = doc.groups.everyItem().getElements();
+        for (var q = 0; q < gs.length; q++) if (gs[q].label === "oscar_qr" && gs[q].parentPage) qrGroups.push(gs[q]);
+    })();
+    function withSpreadOrigin(fn) {
+        doc.viewPreferences.rulerOrigin = RulerOrigin.SPREAD_ORIGIN;
+        try { return fn(); } finally { doc.viewPreferences.rulerOrigin = RulerOrigin.PAGE_ORIGIN; }
+    }
+    function qrAttachments(pageFrames) { // [{tf, grp}] — QR group flush under a prompt, left edges aligned
+        if (!qrGroups.length) return [];
+        return withSpreadOrigin(function () {
+            var att = [], pid = pageFrames[0].parentPage.id;
+            for (var q = 0; q < qrGroups.length; q++) {
+                var grp = qrGroups[q];
+                if (grp.parentPage.id !== pid) continue;
+                var gb = grp.geometricBounds;
+                for (var f = 0; f < pageFrames.length; f++) {
+                    var fb = pageFrames[f].geometricBounds;
+                    if (Math.abs(gb[1] - fb[1]) < 0.03 && Math.abs(gb[0] - fb[2]) < 0.03) { att.push({ tf: pageFrames[f], grp: grp }); break; }
+                }
+            }
+            return att;
+        });
+    }
+    function reseatWithQr(pageFrames, att) { // same geometry as place_qr_codes.jsx
+        if (!att.length) return 0;
+        return withSpreadOrigin(function () {
+            var qrH = {}, k, maxUnit = 0;
+            for (k = 0; k < att.length; k++) { var gb = att[k].grp.geometricBounds; qrH[att[k].tf.id] = gb[2] - gb[0]; }
+            for (k = 0; k < pageFrames.length; k++) {
+                var unit = frameH(pageFrames[k]) + (qrH[pageFrames[k].id] || 0);
+                if (unit > maxUnit) maxUnit = unit;
+            }
+            var wantTop = BOTTOM - maxUnit;
+            for (k = 0; k < pageFrames.length; k++) {
+                var dy = wantTop - pageFrames[k].geometricBounds[0];
+                if (Math.abs(dy) > 0.0005) pageFrames[k].move(undefined, [0, dy]);
+            }
+            for (k = 0; k < att.length; k++) {
+                var fb = att[k].tf.geometricBounds, gb2 = att[k].grp.geometricBounds;
+                att[k].grp.move(undefined, [fb[1] - gb2[1], fb[2] - gb2[0]]);
+            }
+            return att.length;
+        });
+    }
+
+    // ── IN PLACE: frames that aren't placed prompts keep their left and bottom edges ──
+    function ragInPlace(f) {
+        var b = f.geometricBounds, left = b[1], bottom = b[2], curW = b[3] - b[1];
+        scoreFrom = f.paragraphs.length > 1 ? 1 : 0;
+        f.texts.item(0).tracking = 0;
+        for (var pi = scoreFrom; pi < f.paragraphs.length; pi++) f.paragraphs.item(pi).balanceRaggedLines = true;
+        var maxW = Math.max(curW, OUTER_M - left), minW = Math.min(MIN_W, maxW);
+        var pick = bestSolo(buildCurve(f, minW, maxW));
+        setWidth(f, pick.w);
+        trackFrame(f);
+        tighten(f);
+        var w = f.geometricBounds[3] - f.geometricBounds[1], h = frameH(f);
+        f.geometricBounds = [bottom - h, left, bottom, left + w];
+        scoreFrom = 1;
+    }
+
     // ── MAIN ───────────────────────────────────────────────────
-    var soloCount = 0, pairCount = 0, skipped = [];
+    var soloCount = 0, pairCount = 0, oneOfPair = 0, qrMoved = 0, skipped = [], touched = [];
 
     for (i = 0; i < order.length; i++) {
         var group = byPage[order[i]];
-        if (pagesFilter && !pagesFilter[group[0].parentPage.name]) continue;
+        if (pagesFilter && !targetIds && !pagesFilter[group[0].parentPage.name]) continue;
+        var nT = 0, g;
+        for (g = 0; g < group.length; g++) if (isTarget(group[g])) nT++;
+        if (!nT) continue;
         // fixed left-right order from current positions — never swapped
         group.sort(function (a, b2) { return a.geometricBounds[1] - b2.geometricBounds[1]; });
+        var att = qrAttachments(group);   // before anything moves
 
-        var g;
         for (g = 0; g < group.length; g++) {
+            if (!isTarget(group[g])) continue;       // a kept partner keeps its tracking too
             group[g].texts.item(0).tracking = 0;   // clean slate so re-runs don't score stale tracking
             var ps0 = group[g].paragraphs;
             for (var bi = 1; bi < ps0.length; bi++) ps0.item(bi).balanceRaggedLines = true;
         }
+        if (group.length <= 2) touched.push(group[0].parentPage.name);
 
-        if (group.length === 1) {
+        if (group.length === 2 && nT === 1) {
+            // one frame of a pair: the partner's width (and so its line breaks) stays;
+            // the target searches the width that's left, same cost rule as the joint split
+            var tT = isTarget(group[0]) ? group[0] : group[1];
+            var tP = tT === group[0] ? group[1] : group[0];
+            var wP = tP.geometricBounds[3] - tP.geometricBounds[1];
+            var nP = ragScore(tP).n;
+            var room = Math.max(MIN_W, AVAIL - GAP - wP);
+            var curveT = buildCurve(tT, Math.min(MIN_W, room), room);
+            var LINE_COST1 = 0.05, pickT = null, costT = null, devT = null;
+            for (var ct = 0; ct < curveT.length; ct++) {
+                var cst = curveT[ct].s + LINE_COST1 * Math.max(curveT[ct].n, nP);
+                var dv = Math.abs(curveT[ct].w - TARGET2);
+                if (pickT === null || cst < costT - 0.02 || (cst <= costT + 0.02 && dv < devT - 1e-9)) {
+                    pickT = curveT[ct]; costT = cst; devT = dv;
+                }
+            }
+            setWidth(tT, pickT.w);
+            trackFrame(tT);
+            tighten(tT);
+            placePair(group[0], group[1]);
+            oneOfPair++;
+        } else if (group.length === 1) {
             tf = group[0];
             var pick = bestSolo(buildCurve(tf, MIN_W, AVAIL));
             setWidth(tf, pick.w);
@@ -312,11 +428,21 @@ function ragPrompts() {
             pairCount++;
         } else {
             skipped.push("page " + group[0].parentPage.name + ": " + group.length + " prompt frames");
+            continue;
         }
+        qrMoved += reseatWithQr(group, att);
     }
+    for (i = 0; i < inPlace.length; i++) { ragInPlace(inPlace[i]); touched.push(inPlace[i].parentPage.name + " (in place)"); }
 
     restoreUnits();
-    var msg = "Ragged " + soloCount + " solo prompts and " + pairCount + " pairs.";
+    var msg;
+    if (targetIds) {
+        msg = "Ragged " + (soloCount + pairCount * 2 + oneOfPair + inPlace.length) + " frame(s) on page " + touched.join(", ") + ".";
+        if (oneOfPair) msg += "\nPartner prompts kept their rag and only moved to keep the pair layout.";
+    } else {
+        msg = "Ragged " + soloCount + " solo prompts and " + pairCount + " pairs.";
+    }
+    if (qrMoved) msg += "\nQR codes moved with their prompts: " + qrMoved + ".";
     if (skipped.length) msg += "\n\nSkipped (more than 2 frames on page):\n" + skipped.join("\n");
     if (quiet) return msg;
     alert(msg);
