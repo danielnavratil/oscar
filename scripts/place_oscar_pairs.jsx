@@ -203,9 +203,13 @@ function placeOscarPairs() {
                  "Then the new prompts get ragged and the QR codes are made and placed.")) return;
 
     // ── INSERT PAGES (spliced in, not appended at the end) ─────
+    // New pages copy the master of the page they follow; after the TOC that is [None],
+    // which left Issue 43's pair pages without page numbers. Pair pages use "A-Page #".
+    var pairMaster = doc.masterSpreads.itemByName("A-Page #");
     var anchor = doc.pages.item(afterPage - 1);
     for (var n = 0; n < newPages; n++) {
         anchor = doc.pages.add(LocationOptions.AFTER, anchor);
+        if (pairMaster.isValid) anchor.appliedMaster = pairMaster;
     }
     // Each pair assumes its spread starts on a left-hand page
     if (doc.pages.item(START_PAGE - 1).side !== PageSideOptions.LEFT_HAND) {
