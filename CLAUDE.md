@@ -32,6 +32,7 @@ Internal curation tool for a Midjourney magazine. Three users (Daniel, Hongrae, 
 
 - InDesign executes the copies in `~/Library/Preferences/Adobe InDesign/Version 21.0/en_US/Scripts/Scripts Panel/Midjourney/`, not the repo. After editing a placement script, copy it there — the repo copy is canonical; copies have drifted before. Keep all the Oscar `.jsx` files together in that one folder: `place_oscar_pairs.jsx` loads `rag_prompts.jsx` and `place_qr_codes.jsx` from its own folder.
 - Daily-theme projects skip the pipeline and placement entirely (browser-side JPG zip download from the Export tab).
+- Finishing an issue: `scan_issue.jsx` (pre-flight report, changes nothing) → `make_kopa_doc.jsx` (saves "<name> KOPA.indd", swaps links via `swap_print_profile.jsx`, swaps the Hemlock inside-back ad for `<issue>/Links/KOPA Inside Back*.jpg`) → `export_issue_pdfs.jsx` (one export per open MJ doc: HEMLOCK → `HH/<name>/` split per page by the preset itself, KOPA → `KOPA/<name>.pdf`). Never export page by page — each export makes its own folder — and InDesign won't overwrite a split folder (it writes "<name>(1)"), so the script refuses to run over existing output. Works for the posters docs too.
 
 ## Conventions
 
