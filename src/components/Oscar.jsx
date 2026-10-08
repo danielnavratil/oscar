@@ -1101,7 +1101,6 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
         {chunks.map((c,i)=><button key={c.key} className={`pl ${chunkFilter===c.key?"on":""}`} onClick={()=>{setChunkFilter(c.key);setBmFilter(false);}} style={{fontSize:9}}>{c.label} <span style={{opacity:.4}}>{c.images.length}</span></button>)}
         <button className={`pl ${bmFilter?"on":""}`} onClick={()=>{setBmFilter(v=>!v);setChunkFilter(null);}}>bookmarked <span style={{opacity:.4}}>{allBm.size}</span></button>
         <button className={`pl ${dedup?"on":""}`} onClick={()=>setDedup(v=>!v)}>dedup</button>
-        <button className="pl" onClick={jumpToLastBm} disabled={lastBmIdx<0} style={{opacity:lastBmIdx<0?.4:1}}>jump to last bookmark</button>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
         <div style={{display:"flex",alignItems:"center",gap:5}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>split</span>
@@ -1145,6 +1144,12 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
           );
         })}
       </div>
+      {lastBmIdx>=0 && (
+        <button className="pl" onClick={jumpToLastBm}
+          style={{position:"fixed",right:22,bottom:22,zIndex:100,borderRadius:999,padding:"8px 16px",fontSize:10,background:"var(--sf)",color:"var(--tx)",boxShadow:"0 2px 10px rgba(0,0,0,.18)"}}>
+          ↓ last bookmark
+        </button>
+      )}
     </div>
     </>
   );
