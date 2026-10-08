@@ -976,6 +976,26 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
   useEffect(() => { flatImagesRef.current = flatImages; }, [flatImages.length]);
   useEffect(() => { fsIdxRef.current = fsIdx; }, [fsIdx]);
 
+  // Jump to my bookmark furthest along in the current order (where I left off before a reload).
+  const [jumpId, setJumpId] = useState(null);
+  let lastBmIdx = -1;
+  for (let i = flatImages.length-1; i >= 0; i--) if (myBm.has(flatImages[i].id)) { lastBmIdx = i; break; }
+  const jumpToLastBm = () => {
+    if (lastBmIdx < 0) return;
+    const img = flatImages[lastBmIdx];
+    setFsIdx(lastBmIdx);
+    if (mode==="fullscreen") return;
+    const chunk = displayedChunks.find(c=>c.images.some(i=>i.id===img.id));
+    const pos = (bmFilter ? chunk.images.filter(i=>allBm.has(i.id)) : chunk.images).findIndex(i=>i.id===img.id);
+    setChunkPages(p=>({...p,[chunk.key]:Math.max(p[chunk.key]||GRID_PAGE, Math.ceil((pos+1)/GRID_PAGE)*GRID_PAGE)}));
+    setJumpId(img.id);
+  };
+  useEffect(() => {
+    if (!jumpId) return;
+    document.querySelector(`[data-img-id="${CSS.escape(jumpId)}"]`)?.scrollIntoView({block:"center"});
+    setJumpId(null);
+  }, [jumpId]);
+
   // Global g/f shortcuts
   useEffect(() => {
     const h = e => {
@@ -1081,6 +1101,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
         {chunks.map((c,i)=><button key={c.key} className={`pl ${chunkFilter===c.key?"on":""}`} onClick={()=>{setChunkFilter(c.key);setBmFilter(false);}} style={{fontSize:9}}>{c.label} <span style={{opacity:.4}}>{c.images.length}</span></button>)}
         <button className={`pl ${bmFilter?"on":""}`} onClick={()=>{setBmFilter(v=>!v);setChunkFilter(null);}}>bookmarked <span style={{opacity:.4}}>{allBm.size}</span></button>
         <button className={`pl ${dedup?"on":""}`} onClick={()=>setDedup(v=>!v)}>dedup</button>
+        <button className="pl" onClick={jumpToLastBm} disabled={lastBmIdx<0} style={{opacity:lastBmIdx<0?.4:1}}>jump to last bookmark</button>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
         <div style={{display:"flex",alignItems:"center",gap:5}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx3)"}}>split</span>
@@ -1151,7 +1172,7 @@ function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, o
   return (
     <div style={{display:"grid",gridTemplateColumns:`repeat(${colCount},1fr)`,gap:7}}>
       {images.map(img=>(
-        <div key={img.id}>
+        <div key={img.id} data-img-id={img.id}>
           <ICard img={img} bm={myBm?.has(img.id)} bmO={allBm?.has(img.id)&&!myBm?.has(img.id)}
             onBm={onBm} onFull={onFullscreen}
             showCat={showCat} cat={categories?.[img.id]} onCat={onCatChange}
