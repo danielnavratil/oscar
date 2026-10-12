@@ -1430,13 +1430,13 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
           <button key={c} className={`pl ${catFilter===c?"on":""}`} onClick={()=>setCatFilter(c)} style={{textTransform:"capitalize"}}>{c}</button>
         ))}
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
-        <select value={sortBy} onChange={e=>e.target.value==="random"?shuffle():setSortBy(e.target.value)} style={selStyle()}>
+        <select value={sortBy} onChange={e=>["random","reshuffle"].includes(e.target.value)?shuffle():setSortBy(e.target.value)} style={selStyle()}>
           <option value="date">sort: date</option>
           <option value="votes_desc">sort: most votes</option>
           <option value="votes_asc">sort: fewest votes</option>
           <option value="random">sort: random</option>
+          {sortBy==="random"&&<option value="reshuffle">↻ reshuffle</option>}
         </select>
-        <button className={`pl ${sortBy==="random"?"on":""}`} onClick={shuffle}>shuffle</button>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
         <SizeButtons colSize={colSize} setColSize={setColSize}/>
         <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center"}}>
