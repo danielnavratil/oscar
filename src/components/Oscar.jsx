@@ -75,6 +75,9 @@ const downloadImage = async (img) => {
   }
 };
 const COL_COUNTS = {S:10, M:7, L:5, XL:3};
+const SizeButtons = ({ colSize, setColSize }) => ["S","M","L","XL"].map(s=>(
+  <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
+));
 const hasRefs = p => /https?:\/\/\S+/.test(p||"");
 // URL-based references only — URLs are stripped from the printed prompt, so the
 // tag line is the reader's only signal. Numeric --sref codes stay visible in params.
@@ -1112,9 +1115,7 @@ function BrowseTab({ images, myBm, allBm, onBm, onUpload, myCover, onCover }) {
           <button className="pl" onClick={()=>setNumChunks(n=>Math.min(10,n+1))} style={{padding:"2px 7px"}}>+</button>
         </div>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
-        {["S","M","L","XL"].map(s=>(
-          <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
-        ))}
+        <SizeButtons colSize={colSize} setColSize={setColSize}/>
         <div style={{marginLeft:"auto",display:"flex",gap:7,alignItems:"center"}}>
           <div style={{position:"relative",display:"flex",alignItems:"center"}}>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="search prompts"
@@ -1322,6 +1323,7 @@ function FSViewer({ images, startIdx, onClose, myBm, onBm, myVotes, onVote, myCo
 function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, myBm, allBm, onBm, votingOpen, toggleVotingOpen, categorizing, categorizeProgress, runCategorization, refTypes, setRefTypes, myCover, onCover }) {
   const [catFilter, setCatFilter] = useState(null);
   const [showRefsOnly, setShowRefsOnly] = useState(false);
+  const [colSize, setColSize] = useState("M");
   const [fsOpen, setFsOpen] = useState(false);
   const [fsIdx, setFsIdx] = useState(0);
 
@@ -1345,6 +1347,8 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, my
           {categorizing?`categorizing… ${categorizeProgress.done}/${categorizeProgress.total}`:`ai categorize${categorized>0?` (${categorized}/${collImages.length})`:""}`}
         </button>
         {refImages.length>0&&<button className={`pl ${showRefsOnly?"em":""}`} onClick={()=>setShowRefsOnly(v=>!v)}>⚠ refs · {taggedRefs.length}/{refImages.length} tagged</button>}
+        <div style={{width:1,height:14,background:"var(--bd)"}}/>
+        <SizeButtons colSize={colSize} setColSize={setColSize}/>
         <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:votingOpen?"#6aaa6a":"var(--tx3)"}}>{votingOpen?"● open":"○ locked"}</span>
           <button className={`pl ${votingOpen?"em":""}`} onClick={toggleVotingOpen}>{votingOpen?"lock voting":"open voting"}</button>
@@ -1368,7 +1372,7 @@ function CollectionTab({ collImages, categories, onCategoryChange, bookmarks, my
                 <span style={{fontSize:9,color:"var(--tx3)"}}>{imgs.length}</span>
                 <div style={{flex:1,height:1,background:"var(--bd)"}}/>
               </div>
-              <MGrid images={imgs} myBm={myBm} allBm={allBm} onBm={onBm} showCat categories={categories} onCatChange={setCategory} showRefs refTypes={refTypes} onRefTypeChange={setRefType} onFullscreen={openFs}/>
+              <MGrid images={imgs} myBm={myBm} allBm={allBm} onBm={onBm} showCat categories={categories} onCatChange={setCategory} showRefs refTypes={refTypes} onRefTypeChange={setRefType} onFullscreen={openFs} colCount={COL_COUNTS[colSize]}/>
             </div>
           );
         })}
@@ -1390,6 +1394,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
   const [showOthers, setShowOthers] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
   const [sortBy, setSortBy] = useState("date");
+  const [colSize, setColSize] = useState("M");
   const [fsOpen, setFsOpen] = useState(false);
   const [fsIdx, setFsIdx] = useState(0);
   const myVoteCount = images.filter(i=>myVotes.has(i.id)).length;
@@ -1426,6 +1431,8 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
           <option value="votes_desc">sort: most votes</option>
           <option value="votes_asc">sort: fewest votes</option>
         </select>
+        <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
+        <SizeButtons colSize={colSize} setColSize={setColSize}/>
         <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center"}}>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {TEAM.map(n=>(
@@ -1441,7 +1448,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"16px 18px 40px"}}>
-        <MGrid images={filtered} myBm={myBm} myVotes={myVotes} voteCount={showOthers?voteCount:undefined} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs}/>
+        <MGrid images={filtered} myBm={myBm} myVotes={myVotes} voteCount={showOthers?voteCount:undefined} onVote={toggleVote} showVotes votes={showOthers?votes:{}} onFullscreen={openFs} colCount={COL_COUNTS[colSize]}/>
       </div>
     </div>
     </>
@@ -1577,9 +1584,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
           <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{sortedColl.filter(i=>allCover.has(i.id)).length}</span></button>
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
-            {["S","M","L","XL"].map(s=>(
-              <button key={s} className={`pl ${colSize===s?"on":""}`} onClick={()=>setColSize(s)} style={{padding:"2px 8px"}}>{s}</button>
-            ))}
+            <SizeButtons colSize={colSize} setColSize={setColSize}/>
           </div>
         </div>
         {pairingA&&(
