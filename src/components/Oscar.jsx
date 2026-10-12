@@ -1388,18 +1388,22 @@ const VOTE_SORTS = {
   date: (a,b) => new Date(a.enqueue_time)-new Date(b.enqueue_time),
   votes_desc: (a,b,vc) => vc(b.id)-vc(a.id),
   votes_asc: (a,b,vc) => vc(a.id)-vc(b.id),
+  random: (a,b,vc,keys) => (keys[a.id]??1)-(keys[b.id]??1),
 };
 
 function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, onBm, categories, votingOpen, submitted, onSubmit, user, myCover, onCover }) {
   const [showOthers, setShowOthers] = useState(false);
   const [catFilter, setCatFilter] = useState(null);
   const [sortBy, setSortBy] = useState("date");
+  const [shuffleKeys, setShuffleKeys] = useState({});
   const [colSize, setColSize] = useState("M");
   const [fsOpen, setFsOpen] = useState(false);
   const [fsIdx, setFsIdx] = useState(0);
   const myVoteCount = images.filter(i=>myVotes.has(i.id)).length;
   const hasSubmitted = submitted.has(user);
-  const sorted = [...images].sort((a,b)=>VOTE_SORTS[sortBy](a,b,voteCount));
+  // Random order is fixed per click, so live vote updates don't reshuffle the grid.
+  const shuffle = () => { const k = {}; for (const i of images) k[i.id] = Math.random(); setShuffleKeys(k); setSortBy("random"); };
+  const sorted = [...images].sort((a,b)=>VOTE_SORTS[sortBy](a,b,voteCount,shuffleKeys));
   const filtered = catFilter ? sorted.filter(i=>categories[i.id]===catFilter) : sorted;
   const openFs = img => { setFsIdx(filtered.findIndex(i=>i.id===img.id)); setFsOpen(true); };
 
@@ -1426,11 +1430,13 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
           <button key={c} className={`pl ${catFilter===c?"on":""}`} onClick={()=>setCatFilter(c)} style={{textTransform:"capitalize"}}>{c}</button>
         ))}
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
-        <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={selStyle()}>
+        <select value={sortBy} onChange={e=>e.target.value==="random"?shuffle():setSortBy(e.target.value)} style={selStyle()}>
           <option value="date">sort: date</option>
           <option value="votes_desc">sort: most votes</option>
           <option value="votes_asc">sort: fewest votes</option>
+          <option value="random">sort: random</option>
         </select>
+        <button className={`pl ${sortBy==="random"?"on":""}`} onClick={shuffle}>shuffle</button>
         <div style={{width:1,height:14,background:"var(--bd)",margin:"0 3px"}}/>
         <SizeButtons colSize={colSize} setColSize={setColSize}/>
         <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center"}}>
