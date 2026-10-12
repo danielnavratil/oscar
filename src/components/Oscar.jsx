@@ -825,6 +825,9 @@ function ProjectPicker({ initialUser, onEnter, dark, onToggleDark }) {
       const raw = await newProjFile.text();
       parseIssueJson(raw); // validate format
       const file = `${newProjId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.json`;
+      // A reused id would overwrite that project's images and share its bookmarks/votes.
+      const clash = projects.find(p => p.id.toLowerCase() === newProjId.trim().toLowerCase() || p.file === file);
+      if (clash) { alert(`"${clash.name}" already uses that ID. Pick a different one (e.g. ${newProjId.trim()}-DT).`); return; }
       await uploadIssueJson(raw, file);
       const newProject = { id: newProjId.trim(), name: newProjName.trim(), file };
       await upsertIssue(newProject.id, newProject.name);
