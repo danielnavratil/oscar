@@ -129,7 +129,8 @@ export async function uploadIssueJson(rawJson: string, filePath?: string) {
 export async function loadIssueJson(): Promise<unknown[] | null> {
   const { data, error } = await supabase.storage
     .from(ISSUE_JSON_BUCKET)
-    .download(ISSUE_JSON_PATH);
+    // Storage serves files with an hour of caching, so a replaced file would load stale without the nonce.
+    .download(ISSUE_JSON_PATH, { cacheNonce: String(Date.now()) });
 
   if (error) {
     if (isStorageNotFound(error)) {
