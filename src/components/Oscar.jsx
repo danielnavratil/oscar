@@ -1556,6 +1556,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const [coverFilter, setCoverFilter] = useState(false);
   const [poolMode, setPoolMode] = useState("unpaired");
   const [pairingA, setPairingA] = useState(null);
+  const [selView, setSelView] = useState("recommended"); // with an image selected: "recommended" | "all" | a category
   const [colSize, setColSize] = useState("M");
   const [dragPid, setDragPid] = useState(null);
   const [dropTarget, setDropTarget] = useState(null); // {idx, after}
@@ -1572,18 +1573,24 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const basePool = coverFilter ? sortedColl.filter(i=>allCover.has(i.id)) : pool;
   const filteredPool = catFilter ? basePool.filter(i=>categories[i.id]===catFilter) : basePool;
 
-  // With an image selected, every bookmarked image (paired ones too, marked) is ordered by match.
+  // With an image selected, the grid draws from every bookmarked image (paired ones too, marked),
+  // minus its artist: ordered by match ("recommended"), or by votes for "all" or one category.
   const collKey = sortedColl.map(i=>i.id).join();
   const matchIndex = useMemo(() => buildMatchIndex(sortedColl, matchNotes), [collKey, matchNotes]);
-  const gridImages = pairingA ? rankPartners(pairingA, sortedColl, matchIndex, { categories, voteCount }).map(r=>r.img) : filteredPool;
+  const candidates = pairingA ? sortedColl.filter(i=>i.id!==pairingA.id&&i.user_name!==pairingA.user_name) : [];
+  const gridImages = !pairingA ? filteredPool
+    : selView==="recommended" ? rankPartners(pairingA, sortedColl, matchIndex, { categories, voteCount }).map(r=>r.img)
+    : selView==="all" ? candidates
+    : candidates.filter(i=>categories[i.id]===selView);
+  const catPool = pairingA ? candidates : pool;
   const notedCount = sortedColl.filter(i=>matchNotes[i.id]?.v===NOTES_VERSION).length;
   useLayoutEffect(() => {
     const el = gridRef.current;
     if (el) el.scrollTop = pairingA ? 0 : poolScrollRef.current;
-  }, [pairingA?.id]);
+  }, [pairingA?.id, selView]);
 
   const handleSel = img => {
-    if (!pairingA) { poolScrollRef.current = gridRef.current?.scrollTop || 0; setPairingA(img); return; }
+    if (!pairingA) { poolScrollRef.current = gridRef.current?.scrollTop || 0; setSelView("recommended"); setPairingA(img); return; }
     if (pairingA.id===img.id) { setPairingA(null); return; }
     const type = poolMode==="all" ? "proposal" : "confirmed";
     // taking an image from an existing pair breaks that pair; its partner goes back to the pool
@@ -1664,9 +1671,10 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           <button className={`pl ${poolMode==="all"?"em":""}`} onClick={()=>{setPoolMode("all");setPairingA(null);}}>all bookmarked ({sortedColl.length})</button>
           {poolMode==="all"&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>→ proposals</span>}
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
-          <button className={`pl ${!catFilter?"on":""}`} onClick={()=>setCatFilter(null)}>all</button>
-          {CATEGORIES.filter(c=>pool.some(i=>categories[i.id]===c)).map(c=>(
-            <button key={c} className={`pl ${catFilter===c?"on":""}`} onClick={()=>setCatFilter(c)} style={{textTransform:"capitalize"}}>{c} <span style={{opacity:.4}}>{pool.filter(i=>categories[i.id]===c).length}</span></button>
+          {pairingA&&<button className={`pl ${selView==="recommended"?"on":""}`} onClick={()=>setSelView("recommended")}>recommended</button>}
+          <button className={`pl ${(pairingA?selView==="all":!catFilter)?"on":""}`} onClick={()=>pairingA?setSelView("all"):setCatFilter(null)}>all</button>
+          {CATEGORIES.filter(c=>catPool.some(i=>categories[i.id]===c)).map(c=>(
+            <button key={c} className={`pl ${(pairingA?selView===c:catFilter===c)?"on":""}`} onClick={()=>pairingA?setSelView(c):setCatFilter(c)} style={{textTransform:"capitalize"}}>{c} <span style={{opacity:.4}}>{catPool.filter(i=>categories[i.id]===c).length}</span></button>
           ))}
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
           <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{sortedColl.filter(i=>allCover.has(i.id)).length}</span></button>
@@ -1677,7 +1685,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
         </div>
         {pairingA&&(
           <div style={{padding:"6px 13px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,background:"var(--sf3)"}}>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)"}}>@{images.find(i=>i.id===pairingA.id)?.user_name} selected · best matches first, paired ones included · click another to {poolMode==="all"?"propose":"pair"}</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)"}}>@{images.find(i=>i.id===pairingA.id)?.user_name} selected · {selView==="recommended"?"best matches first":`${selView==="all"?"all":selView} by votes`}, paired ones included · click another to {poolMode==="all"?"propose":"pair"}</span>
             <button onClick={()=>setPairingA(null)} style={{background:"none",border:"none",color:"var(--tx3)",cursor:"pointer",fontSize:15}}>×</button>
           </div>
         )}
