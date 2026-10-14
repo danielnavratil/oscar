@@ -243,6 +243,9 @@ function GlobalStyles() {
       ::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
       .iw{position:relative;overflow:hidden;background:var(--img-ph);cursor:pointer}
       .prs:hover>div,.prs.on>div{background:var(--tx3)!important}
+      .hdb{position:absolute;top:5px;right:5px;width:20px;height:20px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;backdrop-filter:blur(6px);background:var(--bmb-off);color:var(--tx2);opacity:0;transition:opacity .15s;z-index:3}
+      .iw:hover .hdb,.hdb.on{opacity:1}
+      .hdb:hover{background:var(--ac);color:var(--ac-tx)}
       .iw img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .32s ease;display:block;-webkit-user-drag:none;user-select:none}
       .iw:hover img{transform:scale(1.04)}
       .iov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.72) 0%,transparent 52%);opacity:0;transition:opacity .2s;pointer-events:none}
@@ -882,7 +885,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload} myCover={myCover} onCover={toggleCover}/>}
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizing={categorizing} categorizeProgress={categorizeProgress} runCategorization={runCategorization} refTypes={refTypes} setRefTypes={setRefTypes} myCover={myCover} onCover={toggleCover}/>}
           {tab==="vote"&&<VoteTab images={collImages} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user} myCover={myCover} onCover={toggleCover}/>}
-          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt} allCover={allCover} matchNotes={matchNotes} notesRun={notesRun} onWriteNotes={()=>writeMatchNotes(sortedColl)}/>}
+          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt} allCover={allCover} matchNotes={matchNotes} notesRun={notesRun} onWriteNotes={()=>writeMatchNotes(sortedColl)} projectId={projectId}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies} projectFile={projectFile} user={user}/>}
         </main>
       </div>
@@ -1269,7 +1272,7 @@ function LoadMore({ remaining, onLoad }) {
 }
 
 // ── MASONRY GRID ───────────────────────────────────────────────
-function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, pairedIds, showRefs, refTypes, onRefTypeChange, colCount=7 }) {
+function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, pairedIds, hiddenIds, onHide, showRefs, refTypes, onRefTypeChange, colCount=7 }) {
   return (
     <div style={{display:"grid",gridTemplateColumns:`repeat(${colCount},minmax(0,1fr))`,gap:7}}>
       {images.map(img=>(
@@ -1278,7 +1281,7 @@ function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, o
             onBm={onBm} onFull={onFullscreen}
             showCat={showCat} cat={categories?.[img.id]} onCat={onCatChange}
             showVotes={showVotes} voted={myVotes?.has(img.id)} vc={voteCount?.(img.id)||0} onVote={onVote} votes={votes}
-            showSel={showSel} sel={selId===img.id} onSel={onSel} paired={pairedIds?.has(img.id)}
+            showSel={showSel} sel={selId===img.id} onSel={onSel} paired={pairedIds?.has(img.id)} hidden={hiddenIds?.has(img.id)} onHide={onHide}
             showRefs={showRefs} refs={refTypes?.[img.id]||[]} onRefChange={v=>onRefTypeChange?.(img.id,v)}/>
         </div>
       ))}
@@ -1287,7 +1290,7 @@ function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, o
 }
 
 // ── IMAGE CARD ─────────────────────────────────────────────────
-function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, voted, vc, onVote, votes, showSel, sel, onSel, paired, showRefs, refs, onRefChange }) {
+function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, voted, vc, onVote, votes, showSel, sel, onSel, paired, hidden, onHide, showRefs, refs, onRefChange }) {
   const [err, setErr] = useState(false);
   const [refOpen, setRefOpen] = useState(false);
 
@@ -1302,7 +1305,7 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
   const outline = sel ? "2px solid var(--tx)" : "none";
 
   return (
-    <div style={{outline,outlineOffset:outline!=="none"?2:0}}>
+    <div style={{outline,outlineOffset:outline!=="none"?2:0,opacity:hidden?.45:1}}>
       <div className="iw" style={{paddingBottom:aspectPad(img.aspect)}} onClick={handleClick}>
         {!err ? <img src={imgUrl(img)} alt="" loading="lazy" draggable={false} onDragStart={e=>e.preventDefault()} onError={()=>setErr(true)}/> : <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--tx3)",fontSize:9,fontFamily:"'DM Mono',monospace"}}>no image</div>}
         <div className="iov"/>
@@ -1314,7 +1317,8 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
         {showVotes&&vc>0&&<div style={{position:"absolute",top:7,left:"7px",background:"rgba(0,0,0,.6)",borderRadius:2,padding:"1px 5px",fontSize:8,fontFamily:"'DM Mono',monospace",color:"#fff"}}>{vc}</div>}
         {cat&&!showCat&&<div style={{position:"absolute",bottom:4,left:4,background:"rgba(0,0,0,.7)",padding:"1px 5px",fontSize:7,color:"#eee",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:".06em"}}>{cat}</div>}
         {showRefs&&hasRefs(img.prompt)&&<div style={{position:"absolute",bottom:4,left:4,background:"rgba(0,0,0,.7)",padding:"1px 5px",fontSize:7,color:"#ffa",fontFamily:"'DM Mono',monospace"}}>refs</div>}
-        {paired&&<div style={{position:"absolute",top:7,right:7,background:"rgba(0,0,0,.7)",padding:"1px 5px",fontSize:7,color:"#eee",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:".06em"}}>paired</div>}
+        {onHide&&<button className={`hdb ${hidden?"on":""}`} onClick={e=>{e.stopPropagation();onHide(img.id);}} title={hidden?"bring back":"hide from the pair grid"}>{hidden?"+":"–"}</button>}
+        {paired&&<div style={{position:"absolute",top:7,right:onHide?30:7,background:"rgba(0,0,0,.7)",padding:"1px 5px",fontSize:7,color:"#eee",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:".06em"}}>paired</div>}
       </div>
       {(showCat||showVotes||showRefs)&&(
         <div style={{background:"var(--sf)",padding:"6px 7px",display:"flex",flexDirection:"column",gap:5,borderTop:"1px solid var(--bd)"}}>
@@ -1552,7 +1556,7 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
 }
 
 // ── PAIR TAB ───────────────────────────────────────────────────
-function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user, processImagePrompt, allCover, matchNotes, notesRun, onWriteNotes }) {
+function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user, processImagePrompt, allCover, matchNotes, notesRun, onWriteNotes, projectId }) {
   const [catFilter, setCatFilter] = useState(null);
   const [coverFilter, setCoverFilter] = useState(false);
   const [poolMode, setPoolMode] = useState("unpaired");
@@ -1585,19 +1589,32 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     window.addEventListener("mouseup", up);
   };
 
-  const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
-  const pool = poolMode==="all" ? sortedColl : unpairedPool;
+  // images hidden from the pair grid (per issue, this browser); "hidden n" shows them again to restore
+  const hiddenKey = `oscar_pair_hidden_${projectId}`;
+  const [hidden, setHidden] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(hiddenKey) || "[]")); } catch { return new Set(); } });
+  const [showHidden, setShowHidden] = useState(false);
+  const toggleHidden = id => setHidden(prev => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    try { localStorage.setItem(hiddenKey, JSON.stringify([...n])); } catch {}
+    return n;
+  });
+  useEffect(() => { if (!hidden.size) setShowHidden(false); }, [hidden.size]);
+  const coll = showHidden ? sortedColl : sortedColl.filter(i=>!hidden.has(i.id));
+
+  const unpairedPool = coll.filter(i=>!confirmedPairedIds.has(i.id));
+  const pool = poolMode==="all" ? coll : unpairedPool;
   // cover picks stay visible even when already paired, so the filter spans all bookmarked
-  const basePool = coverFilter ? sortedColl.filter(i=>allCover.has(i.id)) : pool;
+  const basePool = coverFilter ? coll.filter(i=>allCover.has(i.id)) : pool;
   const filteredPool = catFilter ? basePool.filter(i=>categories[i.id]===catFilter) : basePool;
 
   // With an image selected, the grid draws from every bookmarked image (paired ones too, marked),
   // minus its artist: ordered by match ("recommended"), or by votes for "all" or one category.
   const collKey = sortedColl.map(i=>i.id).join();
   const matchIndex = useMemo(() => buildMatchIndex(sortedColl, matchNotes), [collKey, matchNotes]);
-  const candidates = pairingA ? sortedColl.filter(i=>i.id!==pairingA.id&&i.user_name!==pairingA.user_name) : [];
+  const candidates = pairingA ? coll.filter(i=>i.id!==pairingA.id&&i.user_name!==pairingA.user_name) : [];
   const gridImages = !pairingA ? filteredPool
-    : selView==="recommended" ? rankPartners(pairingA, sortedColl, matchIndex, { categories, voteCount }).map(r=>r.img)
+    : selView==="recommended" ? rankPartners(pairingA, coll, matchIndex, { categories, voteCount }).map(r=>r.img)
     : selView==="all" ? candidates
     : candidates.filter(i=>categories[i.id]===selView);
   const catPool = pairingA ? candidates : pool;
@@ -1686,7 +1703,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{padding:"7px 13px",borderBottom:"1px solid var(--bd)",display:"flex",gap:5,flexWrap:"wrap",flexShrink:0,alignItems:"center",background:"var(--sf2)"}}>
           <button className={`pl ${poolMode==="unpaired"?"on":""}`} onClick={()=>{setPoolMode("unpaired");setPairingA(null);}}>unpaired ({unpairedPool.length})</button>
-          <button className={`pl ${poolMode==="all"?"em":""}`} onClick={()=>{setPoolMode("all");setPairingA(null);}}>all bookmarked ({sortedColl.length})</button>
+          <button className={`pl ${poolMode==="all"?"em":""}`} onClick={()=>{setPoolMode("all");setPairingA(null);}}>all bookmarked ({coll.length})</button>
           {poolMode==="all"&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>→ proposals</span>}
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
           {pairingA&&<button className={`pl ${selView==="recommended"?"on":""}`} onClick={()=>setSelView("recommended")}>recommended</button>}
@@ -1695,7 +1712,8 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
             <button key={c} className={`pl ${(pairingA?selView===c:catFilter===c)?"on":""}`} onClick={()=>pairingA?setSelView(c):setCatFilter(c)} style={{textTransform:"capitalize"}}>{c} <span style={{opacity:.4}}>{catPool.filter(i=>categories[i.id]===c).length}</span></button>
           ))}
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
-          <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{sortedColl.filter(i=>allCover.has(i.id)).length}</span></button>
+          <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{coll.filter(i=>allCover.has(i.id)).length}</span></button>
+          {hidden.size>0&&<button className={`pl ${showHidden?"on":""}`} onClick={()=>setShowHidden(v=>!v)} title="show hidden images so you can bring them back">hidden {hidden.size}</button>}
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
             <button className="pl" onClick={onWriteNotes} disabled={!!notesRun} title="Claude tags each bookmarked image so a selected image's best matches sort first">{notesRun?`writing match notes ${notesRun.done}/${notesRun.total}`:`match notes ${notedCount}/${sortedColl.length}`}</button>
             <SizeButtons colSize={colSize} setColSize={setColSize}/>
@@ -1708,7 +1726,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           </div>
         )}
         <div ref={gridRef} style={{flex:1,overflowY:"auto",padding:"12px 13px"}}>
-          <MGrid images={gridImages} showSel showVotes selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} pairedIds={pairingA?confirmedPairedIds:null} colCount={COL_COUNTS[colSize]}/>
+          <MGrid images={gridImages} showSel showVotes selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} pairedIds={pairingA?confirmedPairedIds:null} hiddenIds={hidden} onHide={toggleHidden} colCount={COL_COUNTS[colSize]}/>
           {!gridImages.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:50,fontFamily:"'DM Mono',monospace"}}>no images{catFilter?" in this category":""}</div>}
         </div>
       </div>
