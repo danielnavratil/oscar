@@ -45,8 +45,16 @@ export const NOTES_SCHEMA = {
 // ── SCORING ────────────────────────────────────────────────────
 // Relative weight of each note field inside the notes similarity.
 export const NOTE_FIELD_WEIGHTS = { subjects: 1, subject_kinds: 1, medium: 1, era: 1, mood: 0.7, materials: 1, light: 0.7, shapes: 0.7, color_families: 0.5, color_character: 0.7 };
-// How the signals add up. Tuned against past issues' pairs.
-export const MATCH_WEIGHTS = { notes: 1, palette: 0.3, prompt: 0.5, category: 0.15, votes: 0.35 };
+// How the signals add up. Starting guesses; tune against new issues with scripts/match_eval.mjs.
+export const MATCH_WEIGHTS = { notes: 1, palette: 0.3, prompt: 0.5, category: 0.35, similarCategory: 0.15, votes: 0.35 };
+
+// Categories paired across often in issues 39–43 (4+ times, above chance), plus sci-fi + transportation.
+export const SIMILAR_CATEGORIES = [
+  ["characters", "humor"], ["characters", "sci-fi"], ["characters", "design"], ["characters", "animals"],
+  ["people", "surreal + horror"], ["people", "fine art"], ["environments", "surreal + horror"],
+  ["architecture + interiors", "sci-fi"], ["sci-fi", "transportation"],
+];
+const similarCats = new Set(SIMILAR_CATEGORIES.flatMap(([a, b]) => [`${a}|${b}`, `${b}|${a}`]));
 
 const stem = w => w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w;
 
@@ -155,6 +163,7 @@ export function buildMatchIndex(images, notes, fieldWeights = NOTE_FIELD_WEIGHTS
 
 // Candidates for `a`, best first, as [{img, score}]. Same artist never pairs.
 export function rankPartners(a, images, index, { categories = {}, voteCount = () => 0, weights = MATCH_WEIGHTS } = {}) {
+  const catA = categories[a.id];
   return images
     .filter(c => c.id !== a.id && c.user_name !== a.user_name)
     .map(c => ({
@@ -162,7 +171,8 @@ export function rankPartners(a, images, index, { categories = {}, voteCount = ()
       score: weights.notes * cosine(index.notes[a.id], index.notes[c.id])
         + weights.palette * paletteSim(index.palette[a.id], index.palette[c.id])
         + weights.prompt * cosine(index.prompt[a.id], index.prompt[c.id])
-        + weights.category * (categories[a.id] && categories[a.id] === categories[c.id] ? 1 : 0)
+        + weights.category * (catA && catA === categories[c.id] ? 1 : 0)
+        + weights.similarCategory * (similarCats.has(`${catA}|${categories[c.id]}`) ? 1 : 0)
         + weights.votes * Math.min(voteCount(c.id), 3) / 3,
     }))
     .sort((x, y) => y.score - x.score);
