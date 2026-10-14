@@ -12,6 +12,7 @@ Internal curation tool for a Midjourney magazine. Three users (Daniel, Hongrae, 
 - `src/lib/db.ts` — the ONLY file that talks to Supabase. All reads/writes go through it.
 - `/api/claude` — server-side proxy to the Anthropic API (keeps the key secret). `/api/image-proxy` — fetches Midjourney CDN images server-side to bypass hotlink protection.
 - Image data is NOT in Postgres. Each project's images live as a JSON file in the Supabase Storage bucket `issue-json`; the list of projects is `projects.json` in the same bucket.
+- Pair matching: `src/lib/match.js` (kept outside `Oscar.jsx` so scripts can import it) ranks partners for the selected image from match notes (Claude tags from fixed word lists + pixel palette, saved to `issue-json/match-notes/<project file>` by the Pair tab's "match notes" button), prompt words, category and votes. `node scripts/match_eval.mjs <issue>` scores it against that issue's real pairs; bump `NOTES_VERSION` when the word lists or notes prompt change. Midjourney's CDN blocks scripted image downloads, so anything that needs pixels runs in the browser.
 - Postgres tables (`issues`, `bookmarks`, `votes`, `vote_submissions`, `categories`, `ref_types`, `pairs`, `voting_state`, `prompt_edits`) are namespaced by `issue_id`. The current project is set at runtime via `setCurrentProject()` from the project picker.
 - Realtime: Supabase postgres_changes subscriptions push everyone's actions live. Vote reloads are debounced 400ms; in-flight ops are tracked in `pendingVoteOpsRef` so optimistic updates aren't clobbered.
 
