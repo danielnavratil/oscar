@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import JSZip from "jszip";
-import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, loadCoverPicks, addCoverPick, removeCoverPick, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject, upsertIssue } from "@/lib/db";
+import { loadBookmarks, loadIssueJson, uploadIssueJson, parseIssueJson, addBookmark, removeBookmark, loadCoverPicks, addCoverPick, removeCoverPick, subscribeToChanges, loadCategories, setCategory as dbSetCategory, loadVotes, addVote, removeVote, loadVotingState, setVotingOpen as dbSetVotingOpen, loadPairs, createPair as dbCreatePair, updatePair as dbUpdatePair, deletePair as dbDeletePair, loadPromptEdits, upsertPromptEdit, updatePromptEditBody as dbUpdatePromptEditBody, clearPromptEdits as dbClearPromptEdits, cleanPromptEditBodies as dbCleanPromptEditBodies, listProjects, saveProjects, setCurrentProject, upsertIssue, loadMatchNotes, saveMatchNotes } from "@/lib/db";
+import { NOTES_VERSION, NOTES_MODEL, NOTES_SYSTEM, NOTES_SCHEMA, paletteFromPixels, buildMatchIndex, rankPartners } from "@/lib/match";
 
 
 const CATEGORIES = ["characters","people","abstraction","environments","design","surreal + horror","architecture + interiors","transportation","plants","food","fine art","humor","sci-fi","fashion","animals"];
@@ -92,15 +93,29 @@ const detectRefTypes = p => {
   }
   return t;
 };
-const toBase64 = async (url) => {
-  const res = await fetch(url);
-  const blob = await res.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve({ data: reader.result.split(',')[1], media_type: blob.type || 'image/webp' });
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+const blobToBase64 = blob => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve({ data: reader.result.split(',')[1], media_type: blob.type || 'image/webp' });
+  reader.onerror = reject;
+  reader.readAsDataURL(blob);
+});
+const toBase64 = async (url) => blobToBase64(await (await fetch(url)).blob());
+// match notes look at the 1024px version when the CDN has it
+const fetchImageBlob = async img => {
+  for (const size of [1024, 640]) {
+    const res = await fetch(imgUrl(img, size));
+    if (res.ok) return res.blob();
+  }
+  throw new Error("image fetch failed");
+};
+const paletteFromBlob = async blob => {
+  const bmp = await createImageBitmap(blob);
+  const s = 64 / Math.max(bmp.width, bmp.height);
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(bmp.width * s)); cv.height = Math.max(1, Math.round(bmp.height * s));
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+  return paletteFromPixels(ctx.getImageData(0, 0, cv.width, cv.height).data);
 };
 const selStyle = (dark) => ({ background:"transparent", border:`1px solid var(--bd)`, color:"var(--tx2)", fontSize:10, fontFamily:"'DM Mono',monospace", padding:"2px 4px", outline:"none", cursor:"pointer" });
 
@@ -237,9 +252,6 @@ function GlobalStyles() {
       .bmb.off{background:var(--bmb-off);color:var(--tx3)}
       .bmb.on{background:var(--ac);color:var(--ac-tx)}
       .bmb:hover{transform:scale(1.12)}
-      .sgb{position:absolute;bottom:7px;right:7px;width:22px;height:22px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;backdrop-filter:blur(6px);background:var(--bmb-off);color:var(--tx3);opacity:0;transition:all .15s;z-index:3}
-      .iw:hover .sgb{opacity:1}
-      .sgb:hover{background:var(--ac);color:var(--ac-tx);transform:scale(1.1)}
       .tl{background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--tx3);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:0 16px;height:100%;font-family:'DM Mono',monospace;transition:color .15s;white-space:nowrap}
       .tl:hover{color:var(--tx2)}
       .tl.on{color:var(--tx);border-bottom-color:var(--tx)}
@@ -319,6 +331,10 @@ export default function App() {
   const [categorizing, setCategorizing] = useState(false);
   const [categorizeProgress, setCategorizeProgress] = useState({ done: 0, total: 0 });
   const categorizingRef = useRef(false);
+  const [matchNotes, setMatchNotes] = useState({});
+  const [notesRun, setNotesRun] = useState(null); // {done, total} while writing
+  const notesRunRef = useRef(false);
+  const notesCancelRef = useRef(false);   // set when leaving the project mid-run
   const [tab, setTab] = useState(() => {
     if (typeof window === 'undefined') return "browse";
     try { return localStorage.getItem('oscar_tab') || "browse"; } catch { return "browse"; }
@@ -406,6 +422,15 @@ export default function App() {
   }, [projectId]);
 
   useEffect(() => { promptEditsRef.current = promptEdits; }, [promptEdits]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    loadMatchNotes()
+      .then(n => { if (!cancelled) setMatchNotes(n); })
+      .catch(err => console.error("Failed to load match notes:", err));
+    return () => { cancelled = true; };
+  }, [projectId]);
   useEffect(() => {
     try { localStorage.setItem('oscar_tab', tab); } catch {}
   }, [tab]);
@@ -622,6 +647,8 @@ export default function App() {
     setPromptEdits({});
     promptEditsRef.current = {};
     setPromptEditsLoaded(false);
+    setMatchNotes({});
+    notesCancelRef.current = true;
     hasProcessedInitialRef.current = false;
     processingPromptsRef.current.clear();
   }, []);
@@ -731,6 +758,70 @@ Reply with ONLY the category name, exactly as written above.`;
     }
   }, [categorizeAll, addNotice]);
 
+  // Claude tags + pixel palette for each image, saved per project; drives the Pair tab's match order.
+  const writeMatchNotes = useCallback(async (imgs) => {
+    if (notesRunRef.current) return;
+    const todo = imgs.filter(i => matchNotes[i.id]?.v !== NOTES_VERSION);
+    if (!todo.length) { addNotice("Match notes are up to date."); return; }
+    notesRunRef.current = true;
+    notesCancelRef.current = false;
+    const file = projectFile;
+    const notes = { ...matchNotes };
+    let done = 0, failed = 0, failStreak = 0, lastError = "";
+    let saving = Promise.resolve();
+    const save = () => { const snap = { ...notes }; saving = saving.then(() => saveMatchNotes(snap, file)); return saving; };
+    setNotesRun({ done: 0, total: todo.length });
+    const writeOne = async img => {
+      const blob = await fetchImageBlob(img);
+      const palette = await paletteFromBlob(blob);
+      const { data, media_type } = await blobToBase64(blob);
+      const res = await fetch("/api/claude", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: NOTES_MODEL, max_tokens: 2000,
+          thinking: { type: "between_tools" },
+          output_config: { effort: "low", format: { type: "json_schema", schema: NOTES_SCHEMA } },
+          system: [{ type: "text", text: NOTES_SYSTEM, cache_control: { type: "ephemeral" } }],
+          messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type, data } },
+            { type: "text", text: `Prompt: "${(img.prompt || "").slice(0, 300)}"` },
+          ] }],
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(claudeErrorMessage(res.status, json));
+      notes[img.id] = { v: NOTES_VERSION, palette, ...JSON.parse(json.content.find(b => b.type === "text").text) };
+    };
+    const queue = [...todo];
+    const worker = async () => {
+      while (queue.length && !notesCancelRef.current) {
+        const img = queue.shift();
+        try { await writeOne(img); failStreak = 0; }
+        catch (e) {
+          failed++; failStreak++; lastError = e?.message || String(e);
+          console.error('[match-notes]', img.id, e);
+          if (failStreak >= 8) queue.length = 0;   // something systemic (rate limit, credits): stop
+        }
+        done++;
+        if (notesCancelRef.current) break;
+        setNotesRun({ done, total: todo.length });
+        if (done % 25 === 0) { save().catch(e => console.error('[match-notes] save', e)); setMatchNotes({ ...notes }); }
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: 5 }, worker));
+      await save();
+      if (notesCancelRef.current) return;
+      setMatchNotes({ ...notes });
+      addNotice(failed ? `Match notes: ${failed} of ${todo.length} failed (${lastError}). Run again to retry those.` : `Match notes written for ${todo.length} images.`);
+    } catch (e) {
+      addNotice(`Saving match notes failed: ${e?.message ?? e}`);
+    } finally {
+      notesRunRef.current = false;
+      setNotesRun(null);
+    }
+  }, [matchNotes, addNotice, projectFile]);
+
   const toggleVotingOpen = useCallback(() => {
     setVotingOpen(prev => {
       const next = !prev;
@@ -790,7 +881,7 @@ Reply with ONLY the category name, exactly as written above.`;
           {tab==="browse"&&<BrowseTab images={images} myBm={myBm} allBm={allBm} onBm={toggleBm} onUpload={handleUpload} myCover={myCover} onCover={toggleCover}/>}
           {tab==="collection"&&<CollectionTab collImages={collImages} categories={categories} onCategoryChange={updateCategory} bookmarks={bookmarks} myBm={myBm} allBm={allBm} onBm={toggleBm} votingOpen={votingOpen} toggleVotingOpen={toggleVotingOpen} categorizing={categorizing} categorizeProgress={categorizeProgress} runCategorization={runCategorization} refTypes={refTypes} setRefTypes={setRefTypes} myCover={myCover} onCover={toggleCover}/>}
           {tab==="vote"&&<VoteTab images={collImages} votes={votes} myVotes={myVotes} voteCount={voteCount} toggleVote={toggleVote} myBm={myBm} allBm={allBm} onBm={toggleBm} categories={categories} votingOpen={votingOpen} submitted={submitted} onSubmit={submitVotes} user={user} myCover={myCover} onCover={toggleCover}/>}
-          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt} allCover={allCover}/>}
+          {tab==="pair"&&<PairTab images={images} sortedColl={sortedColl} pairs={pairs} setPairs={setPairs} categories={categories} voteCount={voteCount} confirmedPairedIds={confirmedPairedIds} user={user} processImagePrompt={processImagePrompt} allCover={allCover} matchNotes={matchNotes} notesRun={notesRun} onWriteNotes={()=>writeMatchNotes(sortedColl)}/>}
           {tab==="export"&&<ExportTab pairs={confirmedPairs} images={images} categories={categories} votes={votes} bookmarks={bookmarks} refTypes={refTypes} promptEdits={promptEdits} onEditSave={updateEditedBody} onReprocess={reprocessAllPrompts} onClean={cleanPromptBodies} projectFile={projectFile} user={user}/>}
         </main>
       </div>
@@ -1177,7 +1268,7 @@ function LoadMore({ remaining, onLoad }) {
 }
 
 // ── MASONRY GRID ───────────────────────────────────────────────
-function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, suggestion, onSuggest, showRefs, refTypes, onRefTypeChange, colCount=7 }) {
+function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, pairedIds, showRefs, refTypes, onRefTypeChange, colCount=7 }) {
   return (
     <div style={{display:"grid",gridTemplateColumns:`repeat(${colCount},1fr)`,gap:7}}>
       {images.map(img=>(
@@ -1186,8 +1277,7 @@ function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, o
             onBm={onBm} onFull={onFullscreen}
             showCat={showCat} cat={categories?.[img.id]} onCat={onCatChange}
             showVotes={showVotes} voted={myVotes?.has(img.id)} vc={voteCount?.(img.id)||0} onVote={onVote} votes={votes}
-            showSel={showSel} sel={selId===img.id} suggested={suggestion===img.id} onSel={onSel}
-            onSuggest={onSuggest}
+            showSel={showSel} sel={selId===img.id} onSel={onSel} paired={pairedIds?.has(img.id)}
             showRefs={showRefs} refs={refTypes?.[img.id]||[]} onRefChange={v=>onRefTypeChange?.(img.id,v)}/>
         </div>
       ))}
@@ -1196,7 +1286,7 @@ function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, o
 }
 
 // ── IMAGE CARD ─────────────────────────────────────────────────
-function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, voted, vc, onVote, votes, showSel, sel, suggested, onSel, onSuggest, showRefs, refs, onRefChange }) {
+function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, voted, vc, onVote, votes, showSel, sel, onSel, paired, showRefs, refs, onRefChange }) {
   const [err, setErr] = useState(false);
   const [refOpen, setRefOpen] = useState(false);
 
@@ -1208,7 +1298,7 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
     if (showSel) onSel?.(img); else onFull?.(img);
   };
 
-  const outline = suggested ? "2px solid var(--tx2)" : sel ? "2px solid var(--tx)" : "none";
+  const outline = sel ? "2px solid var(--tx)" : "none";
 
   return (
     <div style={{outline,outlineOffset:outline!=="none"?2:0}}>
@@ -1223,8 +1313,7 @@ function ICard({ img, bm, bmO, onBm, onFull, showCat, cat, onCat, showVotes, vot
         {showVotes&&vc>0&&<div style={{position:"absolute",top:7,left:"7px",background:"rgba(0,0,0,.6)",borderRadius:2,padding:"1px 5px",fontSize:8,fontFamily:"'DM Mono',monospace",color:"#fff"}}>{vc}</div>}
         {cat&&!showCat&&<div style={{position:"absolute",bottom:4,left:4,background:"rgba(0,0,0,.7)",padding:"1px 5px",fontSize:7,color:"#eee",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:".06em"}}>{cat}</div>}
         {showRefs&&hasRefs(img.prompt)&&<div style={{position:"absolute",bottom:4,left:4,background:"rgba(0,0,0,.7)",padding:"1px 5px",fontSize:7,color:"#ffa",fontFamily:"'DM Mono',monospace"}}>refs</div>}
-        {onSuggest&&<button className="sgb" onClick={e=>{e.stopPropagation();onSuggest(img);}} title="AI suggest pair">✦</button>}
-        {suggested&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,.6)",border:"1px solid var(--tx2)",borderRadius:2,padding:"1px 5px",fontSize:7,color:"var(--tx2)",fontFamily:"'DM Mono',monospace"}}>suggested</div>}
+        {paired&&<div style={{position:"absolute",top:7,right:7,background:"rgba(0,0,0,.7)",padding:"1px 5px",fontSize:7,color:"#eee",fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:".06em"}}>paired</div>}
       </div>
       {(showCat||showVotes||showRefs)&&(
         <div style={{background:"var(--sf)",padding:"6px 7px",display:"flex",flexDirection:"column",gap:5,borderTop:"1px solid var(--bd)"}}>
@@ -1462,13 +1551,11 @@ function VoteTab({ images, votes, myVotes, voteCount, toggleVote, myBm, allBm, o
 }
 
 // ── PAIR TAB ───────────────────────────────────────────────────
-function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user, processImagePrompt, allCover }) {
+function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, confirmedPairedIds, user, processImagePrompt, allCover, matchNotes, notesRun, onWriteNotes }) {
   const [catFilter, setCatFilter] = useState(null);
   const [coverFilter, setCoverFilter] = useState(false);
   const [poolMode, setPoolMode] = useState("unpaired");
   const [pairingA, setPairingA] = useState(null);
-  const [suggestion, setSuggestion] = useState(null);
-  const [suggesting, setSuggesting] = useState(null);
   const [colSize, setColSize] = useState("M");
   const [dragPid, setDragPid] = useState(null);
   const [dropTarget, setDropTarget] = useState(null); // {idx, after}
@@ -1476,6 +1563,8 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const listRef = useRef(null);      // confirmed-list scroll container
   const cardRefs = useRef({});       // pair id → card wrapper DOM node
   const scrollAnchorRef = useRef(null); // {id, top} — keep this card visually still across a re-sort
+  const gridRef = useRef(null);          // pool scroll container
+  const poolScrollRef = useRef(0);       // pool scroll position before a selection reordered it
 
   const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
   const pool = poolMode==="all" ? sortedColl : unpairedPool;
@@ -1483,36 +1572,28 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const basePool = coverFilter ? sortedColl.filter(i=>allCover.has(i.id)) : pool;
   const filteredPool = catFilter ? basePool.filter(i=>categories[i.id]===catFilter) : basePool;
 
+  // With an image selected, every bookmarked image (paired ones too, marked) is ordered by match.
+  const collKey = sortedColl.map(i=>i.id).join();
+  const matchIndex = useMemo(() => buildMatchIndex(sortedColl, matchNotes), [collKey, matchNotes]);
+  const gridImages = pairingA ? rankPartners(pairingA, sortedColl, matchIndex, { categories, voteCount }).map(r=>r.img) : filteredPool;
+  const notedCount = sortedColl.filter(i=>matchNotes[i.id]?.v===NOTES_VERSION).length;
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (el) el.scrollTop = pairingA ? 0 : poolScrollRef.current;
+  }, [pairingA?.id]);
+
   const handleSel = img => {
-    if (!pairingA) { setPairingA(img); setSuggestion(null); return; }
+    if (!pairingA) { poolScrollRef.current = gridRef.current?.scrollTop || 0; setPairingA(img); return; }
     if (pairingA.id===img.id) { setPairingA(null); return; }
     const type = poolMode==="all" ? "proposal" : "confirmed";
+    // taking an image from an existing pair breaks that pair; its partner goes back to the pool
+    if (type==="confirmed") pairs.filter(p=>p.type==="confirmed"&&[p.a.id,p.b.id].some(id=>id===img.id||id===pairingA.id)).forEach(p=>del(p.id));
     const newPair = {id:`${Date.now()}`,a:{id:pairingA.id,side:"L",size:"full bleed"},b:{id:img.id,side:"R",size:"full bleed"},creator:user,type};
     setPairs(p=>[...p,newPair]);
     dbCreatePair(newPair).catch(err => console.error("Failed to save pair:", err));
     processImagePrompt(pairingA);
     processImagePrompt(img);
-    setPairingA(null); setSuggestion(null);
-  };
-
-  const suggestPair = async img => {
-    setSuggesting(img.id); setSuggestion(null);
-    const candidates = filteredPool.filter(i=>i.id!==img.id).slice(0,20);
-    try {
-      const { data: imgData, media_type } = await toBase64(imgUrl(img));
-      const res = await fetch("/api/claude", {
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:120,
-          messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type,data:imgData}},
-            {type:"text",text:`You're helping pair images for a print magazine spread. This is image A.\nCandidates:\n${candidates.map(c=>`ID: ${c.id}\nPrompt: "${c.prompt.substring(0,120)}"`).join("\n---\n")}\nWhich candidate makes the best magazine spread pair with image A? Consider visual harmony, tonal balance, thematic complementarity. Reply with ONLY the UUID.`}
-          ]}]})
-      });
-      const data = await res.json();
-      const match = (data.content?.[0]?.text||"").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      if (match) setSuggestion({forId:img.id,suggestedId:match[0]});
-    } catch {}
-    setSuggesting(null);
+    setPairingA(null);
   };
 
   const upd = (pid,k,f,v) => {
@@ -1579,8 +1660,8 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
     <div style={{display:"flex",height:"calc(100vh - 50px)",overflow:"hidden"}}>
       <div style={{flex:1,display:"flex",flexDirection:"column",borderRight:"1px solid var(--bd)",overflow:"hidden"}}>
         <div style={{padding:"7px 13px",borderBottom:"1px solid var(--bd)",display:"flex",gap:5,flexWrap:"wrap",flexShrink:0,alignItems:"center",background:"var(--sf2)"}}>
-          <button className={`pl ${poolMode==="unpaired"?"on":""}`} onClick={()=>{setPoolMode("unpaired");setPairingA(null);setSuggestion(null);}}>unpaired ({unpairedPool.length})</button>
-          <button className={`pl ${poolMode==="all"?"em":""}`} onClick={()=>{setPoolMode("all");setPairingA(null);setSuggestion(null);}}>all bookmarked ({sortedColl.length})</button>
+          <button className={`pl ${poolMode==="unpaired"?"on":""}`} onClick={()=>{setPoolMode("unpaired");setPairingA(null);}}>unpaired ({unpairedPool.length})</button>
+          <button className={`pl ${poolMode==="all"?"em":""}`} onClick={()=>{setPoolMode("all");setPairingA(null);}}>all bookmarked ({sortedColl.length})</button>
           {poolMode==="all"&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>→ proposals</span>}
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
           <button className={`pl ${!catFilter?"on":""}`} onClick={()=>setCatFilter(null)}>all</button>
@@ -1590,24 +1671,19 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           <div style={{width:1,height:14,background:"var(--bd)",margin:"0 2px"}}/>
           <button className="pl" onClick={()=>setCoverFilter(v=>!v)} style={coverBtnStyle(coverFilter)}>cover options <span style={{opacity:.5}}>{sortedColl.filter(i=>allCover.has(i.id)).length}</span></button>
           <div style={{marginLeft:"auto",display:"flex",gap:4}}>
+            <button className="pl" onClick={onWriteNotes} disabled={!!notesRun} title="Claude tags each bookmarked image so a selected image's best matches sort first">{notesRun?`writing match notes ${notesRun.done}/${notesRun.total}`:`match notes ${notedCount}/${sortedColl.length}`}</button>
             <SizeButtons colSize={colSize} setColSize={setColSize}/>
           </div>
         </div>
         {pairingA&&(
           <div style={{padding:"6px 13px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,background:"var(--sf3)"}}>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)"}}>@{images.find(i=>i.id===pairingA.id)?.user_name} selected · click another to {poolMode==="all"?"propose":"pair"}</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)"}}>@{images.find(i=>i.id===pairingA.id)?.user_name} selected · best matches first, paired ones included · click another to {poolMode==="all"?"propose":"pair"}</span>
             <button onClick={()=>setPairingA(null)} style={{background:"none",border:"none",color:"var(--tx3)",cursor:"pointer",fontSize:15}}>×</button>
           </div>
         )}
-        {(suggestion||suggesting)&&(
-          <div style={{padding:"5px 13px",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,background:"var(--sf3)"}}>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)"}}>{suggesting?"✦ finding best pair…":"✦ suggestion highlighted · click to pair"}</span>
-            {suggestion&&<button onClick={()=>setSuggestion(null)} style={{background:"none",border:"none",color:"var(--tx3)",cursor:"pointer",fontSize:15}}>×</button>}
-          </div>
-        )}
-        <div style={{flex:1,overflowY:"auto",padding:"12px 13px"}}>
-          <MGrid images={filteredPool} showSel showVotes selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} onSuggest={!suggesting?suggestPair:null} suggestion={suggestion?.suggestedId} colCount={COL_COUNTS[colSize]}/>
-          {!filteredPool.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:50,fontFamily:"'DM Mono',monospace"}}>no images{catFilter?" in this category":""}</div>}
+        <div ref={gridRef} style={{flex:1,overflowY:"auto",padding:"12px 13px"}}>
+          <MGrid images={gridImages} showSel showVotes selId={pairingA?.id} onSel={handleSel} categories={categories} voteCount={voteCount} pairedIds={pairingA?confirmedPairedIds:null} colCount={COL_COUNTS[colSize]}/>
+          {!gridImages.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:50,fontFamily:"'DM Mono',monospace"}}>no images{catFilter?" in this category":""}</div>}
         </div>
       </div>
       {pairingA&&(

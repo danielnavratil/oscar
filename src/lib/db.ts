@@ -147,6 +147,31 @@ export async function loadIssueJson(): Promise<unknown[] | null> {
   return images;
 }
 
+// ── MATCH NOTES ───────────────────────────────────────────────
+// Per-image notes for pair matching (Claude tags + pixel palette), keyed by image id.
+// One JSON file per project in the same bucket, so no table or migration.
+const matchNotesPath = (file = ISSUE_JSON_PATH) => `match-notes/${file}`;
+
+export async function loadMatchNotes(): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.storage
+    .from(ISSUE_JSON_BUCKET)
+    .download(matchNotesPath(), { cacheNonce: String(Date.now()) });
+  if (error) {
+    if (isStorageNotFound(error)) return {};
+    throw error;
+  }
+  return JSON.parse(await data.text());
+}
+
+// `file` pins the project, so a run that outlives a project switch still saves to its own file.
+export async function saveMatchNotes(notes: Record<string, unknown>, file?: string) {
+  const blob = new Blob([JSON.stringify(notes)], { type: 'application/json' });
+  const { error } = await supabase.storage
+    .from(ISSUE_JSON_BUCKET)
+    .upload(matchNotesPath(file), blob, { upsert: true, contentType: 'application/json' });
+  if (error) throw error;
+}
+
 // ── BOOKMARKS ─────────────────────────────────────────────────
 
 export async function loadBookmarks(): Promise<Record<string, Set<string>>> {
