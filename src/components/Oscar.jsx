@@ -242,6 +242,7 @@ function GlobalStyles() {
       ::-webkit-scrollbar-track{background:var(--bg)}
       ::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
       .iw{position:relative;overflow:hidden;background:var(--img-ph);cursor:pointer}
+      .prs:hover>div,.prs.on>div{background:var(--tx3)!important}
       .iw img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .32s ease;display:block;-webkit-user-drag:none;user-select:none}
       .iw:hover img{transform:scale(1.04)}
       .iov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.72) 0%,transparent 52%);opacity:0;transition:opacity .2s;pointer-events:none}
@@ -1270,7 +1271,7 @@ function LoadMore({ remaining, onLoad }) {
 // ── MASONRY GRID ───────────────────────────────────────────────
 function MGrid({ images, myBm, allBm, onBm, onFullscreen, showCat, categories, onCatChange, showVotes, votes, myVotes, voteCount, onVote, showSel, selId, onSel, pairedIds, showRefs, refTypes, onRefTypeChange, colCount=7 }) {
   return (
-    <div style={{display:"grid",gridTemplateColumns:`repeat(${colCount},1fr)`,gap:7}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${colCount},minmax(0,1fr))`,gap:7}}>
       {images.map(img=>(
         <div key={img.id} data-img-id={img.id}>
           <ICard img={img} bm={myBm?.has(img.id)} bmO={allBm?.has(img.id)&&!myBm?.has(img.id)}
@@ -1566,6 +1567,23 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
   const scrollAnchorRef = useRef(null); // {id, top} — keep this card visually still across a re-sort
   const gridRef = useRef(null);          // pool scroll container
   const poolScrollRef = useRef(0);       // pool scroll position before a selection reordered it
+  const [panelW, setPanelW] = useState(() => { try { return +localStorage.getItem('oscar_pair_panel_w') || 400; } catch { return 400; } });
+  const [panelDrag, setPanelDrag] = useState(false);
+  useEffect(() => { try { localStorage.setItem('oscar_pair_panel_w', String(panelW)); } catch {} }, [panelW]);
+  const startPanelDrag = e => {
+    e.preventDefault();
+    setPanelDrag(true);
+    document.body.style.cursor = "col-resize";
+    const move = ev => setPanelW(Math.round(Math.min(Math.max(window.innerWidth - ev.clientX, 300), window.innerWidth * 0.75)));
+    const up = () => {
+      setPanelDrag(false);
+      document.body.style.cursor = "";
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   const unpairedPool = sortedColl.filter(i=>!confirmedPairedIds.has(i.id));
   const pool = poolMode==="all" ? sortedColl : unpairedPool;
@@ -1665,7 +1683,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
 
   return (
     <div style={{display:"flex",height:"calc(100vh - 50px)",overflow:"hidden"}}>
-      <div style={{flex:1,display:"flex",flexDirection:"column",borderRight:"1px solid var(--bd)",overflow:"hidden"}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{padding:"7px 13px",borderBottom:"1px solid var(--bd)",display:"flex",gap:5,flexWrap:"wrap",flexShrink:0,alignItems:"center",background:"var(--sf2)"}}>
           <button className={`pl ${poolMode==="unpaired"?"on":""}`} onClick={()=>{setPoolMode("unpaired");setPairingA(null);}}>unpaired ({unpairedPool.length})</button>
           <button className={`pl ${poolMode==="all"?"em":""}`} onClick={()=>{setPoolMode("all");setPairingA(null);}}>all bookmarked ({sortedColl.length})</button>
@@ -1694,16 +1712,20 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
           {!gridImages.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:50,fontFamily:"'DM Mono',monospace"}}>no images{catFilter?" in this category":""}</div>}
         </div>
       </div>
+      <div className={`prs ${panelDrag?"on":""}`} onMouseDown={startPanelDrag} title="drag to resize" style={{width:7,margin:"0 -3px",cursor:"col-resize",flexShrink:0,position:"relative",zIndex:5,display:"flex",justifyContent:"center"}}>
+        <div style={{width:1,height:"100%",background:"var(--bd)"}}/>
+      </div>
+      <div style={{width:panelW,flexShrink:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {pairingA&&(
-        <div style={{position:"fixed",bottom:20,left:20,width:255,zIndex:100,borderRadius:4,overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.5)",border:"2px solid var(--tx)",outline:"3px solid #fff",background:"var(--bg)"}}>
-          <div style={{position:"relative"}}>
-            <img src={imgUrl(pairingA)} alt="" style={{width:"100%",display:"block"}}/>
-            <button onClick={()=>setPairingA(null)} style={{position:"absolute",top:5,right:5,width:20,height:20,borderRadius:"50%",background:"rgba(0,0,0,.65)",border:"none",color:"#fff",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
+        <div style={{padding:"13px 13px 12px",borderBottom:"1px solid var(--bd)",flexShrink:0,background:"var(--sf3)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em"}}>NEW PAIR · @{pairingA.user_name}</span>
+            <button onClick={()=>setPairingA(null)} style={{background:"none",border:"none",color:"var(--tx3)",cursor:"pointer",fontSize:15,lineHeight:1}}>×</button>
           </div>
-          <div style={{padding:"5px 8px",fontFamily:"'DM Mono',monospace",fontSize:8,color:"var(--tx3)"}}>@{pairingA.user_name} · click another to pair</div>
+          <img src={imgUrl(pairingA)} alt="" style={{display:"block",maxWidth:"100%",maxHeight:"45vh",margin:"0 auto"}}/>
         </div>
       )}
-      <div ref={listRef} style={{width:400,overflowY:"auto",padding:"13px 13px 40px",flexShrink:0}}>
+      <div ref={listRef} style={{flex:1,overflowY:"auto",padding:"13px 13px 40px"}}>
         <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:"var(--tx2)",letterSpacing:".1em",marginBottom:12}}>CONFIRMED · {confirmedPairs.length}</div>
         {!confirmedPairs.length&&<div style={{color:"var(--tx3)",fontSize:11,textAlign:"center",paddingTop:16,marginBottom:20}}>select from unpaired pool to pair</div>}
         {confirmedPairs.map((pair,i)=>(
@@ -1738,6 +1760,7 @@ function PairTab({ images, sortedColl, pairs, setPairs, categories, voteCount, c
             ))}
           </>
         )}
+      </div>
       </div>
     </div>
   );
