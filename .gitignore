@@ -26,9 +26,18 @@ yarn-error.log*
 # local env files — NEVER commit these
 .env*.local
 
+# MJ auth cookies
+scripts/mj_cookies.txt
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python bytecode
+__pycache__/
+
+# per-machine Claude Code settings
+.claude/settings.local.json
