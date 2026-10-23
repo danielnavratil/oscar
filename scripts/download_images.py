@@ -40,15 +40,28 @@ def get_cookies():
     # 1. Try browser-cookie3 (Arc first, then Chrome as fallback)
     try:
         import browser_cookie3
-        for browser_name, browser_fn in [("Arc", browser_cookie3.arc), ("Chrome", browser_cookie3.chrome)]:
+        # The Midjourney login can live in any Arc profile (Oct 2026 it was "Profile 3",
+        # while Default only had a Cloudflare cookie), so prefer a profile with the auth token.
+        arc_dir = pathlib.Path.home() / "Library/Application Support/Arc/User Data"
+        sources = [(f"Arc ({p.parent.name})", lambda p=p: browser_cookie3.arc(cookie_file=str(p), domain_name="midjourney.com"))
+                   for p in sorted(arc_dir.glob("*/Cookies"))]
+        sources.append(("Chrome", lambda: browser_cookie3.chrome(domain_name="midjourney.com")))
+        fallback = None
+        for browser_name, load in sources:
             try:
-                cj = browser_fn(domain_name="midjourney.com")
-                cookie_str = "; ".join(f"{c.name}={c.value}" for c in cj if c.value)
-                if cookie_str:
-                    print(f"[auth] using cookies from {browser_name}")
-                    return cookie_str
+                cj = list(load())
             except Exception as e:
                 print(f"[auth] {browser_name} failed ({e}), trying next...")
+                continue
+            cookie_str = "; ".join(f"{c.name}={c.value}" for c in cj if c.value)
+            if any(c.name.startswith("__Host-Midjourney.AuthUserToken") for c in cj):
+                print(f"[auth] using cookies from {browser_name}")
+                return cookie_str
+            if cookie_str and not fallback:
+                fallback = (browser_name, cookie_str)
+        if fallback:
+            print(f"[auth] no Midjourney login found; using {fallback[0]} cookies anyway")
+            return fallback[1]
     except ImportError:
         pass
 

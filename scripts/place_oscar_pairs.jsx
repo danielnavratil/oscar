@@ -442,6 +442,14 @@ function placeOscarPairs() {
 }
 
 // Run as one undoable action so Cmd+Z reverts everything
-var __result = app.doScript(placeOscarPairs, ScriptLanguage.JAVASCRIPT, undefined,
-             UndoModes.ENTIRE_SCRIPT, "Place Oscar Pairs");
+// Script units persist for the whole InDesign session; a helper that left them on inches
+// made every point size here 9 *inches* (Oct 2026). Force the default, then restore.
+var __units = app.scriptPreferences.measurementUnit;
+app.scriptPreferences.measurementUnit = AutoEnum.AUTO_VALUE;
+try {
+    var __result = app.doScript(placeOscarPairs, ScriptLanguage.JAVASCRIPT, undefined,
+                 UndoModes.ENTIRE_SCRIPT, "Place Oscar Pairs");
+} finally {
+    app.scriptPreferences.measurementUnit = __units;
+}
 __result;
