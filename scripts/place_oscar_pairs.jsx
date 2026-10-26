@@ -47,6 +47,7 @@ function placeOscarPairs() {
     var PAGE_ASPECT     = PAGE_BLEED_W / PAGE_BLEED_H; // ≈0.764
     var PROMPT_TOP      = 8.375;
     var PROMPT_BOTTOM   = PROMPT_TOP + PROMPT_H;     // 10.375
+    var PROMPT_CLEARANCE = 0.4;     // a prompt frame never comes closer than this to an image (Daniel, Oct 2026)
     var DISPLACE_AT     = PROMPT_TOP;  // displace only when image actually overlaps prompt area
                                        // (must be defined AFTER PROMPT_TOP — var hoisting made this undefined before)
 
@@ -304,6 +305,7 @@ function placeOscarPairs() {
         });
         rect.place(findImageFile(data.id));
         rect.fit(FitOptions.FILL_PROPORTIONALLY);
+        placedRects.push({ rect: rect, side: side, size: data.size, page: page });
         return b;
     }
 
@@ -340,6 +342,7 @@ function placeOscarPairs() {
     }
 
     // ── MAIN LOOP ──────────────────────────────────────────────
+    var placedRects = [];
     var placed = 0;
     var errors = [];
 
@@ -430,12 +433,44 @@ function placeOscarPairs() {
             OSCAR_QR_PRESET: { docName: doc.name, jsonPath: jsonFile.fsName, quiet: true } });
     }
 
+    // ── CLEARANCE: keep every image PROMPT_CLEARANCE above the prompts on its page ──
+    // Runs after rag/QR because ragging changes prompt heights. Long prompts grow
+    // upward into inset images: shrink those from their top outer corner. Full-bleed
+    // images can't shrink, so they're only reported.
+    var shrunk = [], blocked = [];
+    doc.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.INCHES;
+    doc.viewPreferences.verticalMeasurementUnits   = MeasurementUnits.INCHES;
+    doc.viewPreferences.rulerOrigin                = RulerOrigin.PAGE_ORIGIN;
+    for (var ri = 0; ri < placedRects.length; ri++) {
+        var pr = placedRects[ri], rb = pr.rect.geometricBounds, limit = null;
+        var tfs = pr.page.textFrames;
+        for (var ti = 0; ti < tfs.length; ti++) {
+            var tf = tfs[ti];
+            if (tf.label !== "oscar_prompt") continue;
+            var tb = tf.geometricBounds;
+            if (tb[1] >= rb[3] || tb[3] <= rb[1]) continue;      // not under this image
+            if (limit === null || tb[0] < limit) limit = tb[0];
+        }
+        if (limit === null || rb[2] <= limit - PROMPT_CLEARANCE) continue;
+        if (pr.size === "full bleed") { blocked.push(pr.page.name); continue; }
+        var newH = limit - PROMPT_CLEARANCE - rb[0], sc = newH / (rb[2] - rb[0]), newW = (rb[3] - rb[1]) * sc;
+        if (pr.side === "L") pr.rect.geometricBounds = [rb[0], rb[1], rb[0] + newH, rb[1] + newW];
+        else                 pr.rect.geometricBounds = [rb[0], rb[3] - newW, rb[0] + newH, rb[3]];
+        pr.rect.fit(FitOptions.FILL_PROPORTIONALLY);
+        shrunk.push(pr.page.name + " (" + Math.round(sc * 100) + "%)");
+    }
+    doc.viewPreferences.horizontalMeasurementUnits = saved.h;
+    doc.viewPreferences.verticalMeasurementUnits   = saved.v;
+    doc.viewPreferences.rulerOrigin                = saved.r;
+
     // ── REPORT ─────────────────────────────────────────────────
     var msg = "Placed " + placed + " images across " + pairs.length + " spreads (pages " +
               firstName + "–" + lastName + ").";
     if (errors.length) msg += "\n\nErrors (" + errors.length + "):\n" + errors.join("\n");
     if (ragMsg !== null) msg += "\n\nRAG: " + ragMsg;
     if (qrMsg !== null)  msg += "\n\nQR: " + qrMsg;
+    if (shrunk.length)  msg += "\n\nShrunk to clear prompts by " + PROMPT_CLEARANCE + "\": p" + shrunk.join(", p");
+    if (blocked.length) msg += "\n\nFull-bleed images under prompts (fix by hand): p" + blocked.join(", p");
     msg += "\n\nCmd+Z once undoes all of it.";
     if (preset.quiet) return msg;
     alert(msg);
