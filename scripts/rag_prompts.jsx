@@ -10,6 +10,12 @@
 //      (body + params), backing off any change that reflows lines,
 //   3. tightens the frame to the text and anchors the block to the
 //      bottom outer corner of the page margins.
+// No prompt is wider than 5/9 of the margin width (Daniel, Oct 2026), and
+// prompts stay CLEAR (0.4") below any image above them: only widths that
+// keep that clearance are considered (a pair trades width between its two
+// frames); when no width clears, the lowest-sitting width is used and the
+// inset image is scaled down from its top outer corner, crop kept.
+// Full-bleed images under prompts can't move and are only reported.
 // Two prompts on one page are optimized jointly: widths split the
 // available width (0.1667" gap, order never swapped), tops share one
 // y, the taller frame's bottom sits on the bottom margin, the pair
@@ -43,6 +49,8 @@ function ragPrompts() {
     var GAP     = 0.1667;
     var MIN_W   = 2.0;
     var AVAIL   = PAGE_W - 2 * MARGIN;      // 7.375
+    var MAX_W   = AVAIL * 5 / 9;            // widest a prompt may go (~4.1")
+    var CLEAR   = 0.4;                      // prompt never closer than this to an image above it
     var OUTER_M = PAGE_W - MARGIN;          // 7.875
     var BOTTOM  = PAGE_H - MARGIN;          // 10.375
     var STEP    = 0.0625;                   // width search increment
@@ -179,7 +187,7 @@ function ragPrompts() {
         for (var w = minW; w <= maxW + 1e-6; w += STEP) {
             setWidth(tf, w);
             var r = ragScore(tf);
-            samples.push({ w: w, s: r.s, n: r.n });
+            samples.push({ w: w, s: r.s, n: r.n, h: frameH(tf) });
         }
         return samples;
     }
@@ -351,6 +359,59 @@ function ragPrompts() {
         scoreFrom = 1;
     }
 
+    // ── CLEARANCE: images above the prompts ────────────────────
+    function isFullBleed(b) { return b[0] < 0 || b[1] < 0 || b[3] > PAGE_W || b[2] > PAGE_H; }
+    function imagesAbove(page) { // top-level image frames that end above the prompt zone
+        var out = [], rs = page.rectangles;
+        for (var k = 0; k < rs.length; k++) {
+            var r = rs[k];
+            if (!r.allGraphics.length) continue;
+            var b = r.geometricBounds;
+            if (b[2] > BOTTOM - 0.5) continue;           // runs into the prompt zone: full bleed / not "above"
+            out.push(r);
+        }
+        return out;
+    }
+    function ceilingFor(imgs, x0, x1) { // lowest image bottom over [x0, x1]
+        var c = -1e9;
+        for (var k = 0; k < imgs.length; k++) {
+            var b = imgs[k].geometricBounds;
+            if (b[3] <= x0 || b[1] >= x1) continue;
+            if (b[2] > c) c = b[2];
+        }
+        return c;
+    }
+    function qrHeight(att, tf) {
+        for (var k = 0; k < att.length; k++) if (att[k].tf === tf) return withSpreadOrigin(function () { var g = att[k].grp.geometricBounds; return g[2] - g[0]; });
+        return 0;
+    }
+    var shrunk = [], underBleed = [];
+    function clearImages(page, frames) { // after placement: shrink inset images still within CLEAR of the prompts
+        var top = 1e9, x0 = 1e9, x1 = -1e9, k;
+        for (k = 0; k < frames.length; k++) {
+            var fb = frames[k].geometricBounds;
+            if (fb[0] < top) top = fb[0]; if (fb[1] < x0) x0 = fb[1]; if (fb[3] > x1) x1 = fb[3];
+        }
+        var rs = page.rectangles;
+        for (k = 0; k < rs.length; k++) {
+            var r = rs[k];
+            if (!r.allGraphics.length) continue;
+            var b = r.geometricBounds;
+            if (b[3] <= x0 || b[1] >= x1 || b[0] >= top) continue;
+            if (b[2] <= top - CLEAR + 1e-4) continue;
+            if (isFullBleed(b)) { underBleed.push(page.name); continue; }
+            var newH = top - CLEAR - b[0];
+            if (newH <= 0.5) { underBleed.push(page.name + " (no room)"); continue; }
+            var sc = newH / (b[2] - b[0]);
+            var isLeft = page.side === PageSideOptions.LEFT_HAND;
+            var ax = isLeft ? b[1] : b[3], ay = b[0];   // top outer corner stays put
+            var g = r.allGraphics[0], gb = g.geometricBounds;
+            r.geometricBounds = [ay, isLeft ? ax : ax - (b[3] - b[1]) * sc, ay + newH, isLeft ? ax + (b[3] - b[1]) * sc : ax];
+            g.geometricBounds = [ay + (gb[0] - ay) * sc, ax + (gb[1] - ax) * sc, ay + (gb[2] - ay) * sc, ax + (gb[3] - ax) * sc];
+            shrunk.push(page.name + " " + Math.round(sc * 100) + "%");
+        }
+    }
+
     // ── MAIN ───────────────────────────────────────────────────
     var soloCount = 0, pairCount = 0, oneOfPair = 0, qrMoved = 0, skipped = [], touched = [];
 
@@ -405,9 +466,18 @@ function ragPrompts() {
             oneOfPair++;
         } else if (group.length === 1) {
             tf = group[0];
-            var pick = targetIds
-                ? bestSolo(buildCurve(tf, nearLo(tf), Math.max(nearLo(tf), Math.min(AVAIL, curW[tf.id] + NEAR_WIN))), curW[tf.id])
-                : bestSolo(buildCurve(tf, MIN_W, AVAIL));
+            var pick;
+            if (targetIds) pick = bestSolo(buildCurve(tf, nearLo(tf), Math.max(nearLo(tf), Math.min(AVAIL, curW[tf.id] + NEAR_WIN))), curW[tf.id]);
+            else {
+                var curveS = buildCurve(tf, MIN_W, MAX_W), imgsS = imagesAbove(tf.parentPage), qS = qrHeight(att, tf);
+                var leftS = tf.parentPage.side === PageSideOptions.LEFT_HAND, okS = [], lowS = null;
+                for (var cs = 0; cs < curveS.length; cs++) {
+                    var smp = curveS[cs], xa = leftS ? MARGIN : OUTER_M - smp.w;
+                    if (BOTTOM - smp.h - qS >= ceilingFor(imgsS, xa, xa + smp.w) + CLEAR) okS.push(smp);
+                    if (lowS === null || smp.h < lowS.h - 1e-6 || (Math.abs(smp.h - lowS.h) <= 1e-6 && smp.s < lowS.s)) lowS = smp;
+                }
+                pick = okS.length ? bestSolo(okS) : lowS;   // no width clears: sit as low as possible, image shrinks below
+            }
             setWidth(tf, pick.w);
             trackFrame(tf);
             tighten(tf);
@@ -415,7 +485,13 @@ function ragPrompts() {
             soloCount++;
         } else if (group.length === 2) {
             var tfL = group[0], tfR = group[1];
-            var maxW = AVAIL - GAP - MIN_W;
+            var maxW = targetIds ? AVAIL - GAP - MIN_W : Math.min(MAX_W, AVAIL - GAP - MIN_W);
+            var imgsP = imagesAbove(tfL.parentPage), qL = qrHeight(att, tfL), qR = qrHeight(att, tfR);
+            var leftP = tfL.parentPage.side === PageSideOptions.LEFT_HAND;
+            var pairClears = function (wl, wr, hl, hr) {
+                var x0 = leftP ? MARGIN : OUTER_M - wl - GAP - wr;
+                return BOTTOM - Math.max(hl + qL, hr + qR) >= ceilingFor(imgsP, x0, x0 + wl + GAP + wr) + CLEAR;
+            };
             var curveL = targetIds ? buildCurve(tfL, nearLo(tfL), Math.max(nearLo(tfL), Math.min(maxW, curW[tfL.id] + NEAR_WIN))) : buildCurve(tfL, MIN_W, maxW);
             var curveR = targetIds ? buildCurve(tfR, nearLo(tfR), Math.max(nearLo(tfR), Math.min(maxW, curW[tfR.id] + NEAR_WIN))) : buildCurve(tfR, MIN_W, maxW);
             var idealL = targetIds ? curW[tfL.id] : TARGET2, idealR = targetIds ? curW[tfR.id] : TARGET2;
@@ -440,10 +516,23 @@ function ragPrompts() {
                     var dvv = Math.abs(combos[cb].L.w - idealL) + Math.abs(combos[cb].R.w - idealR);
                     if (best === null || dvv < bestDev - 1e-9) { best = combos[cb]; bestDev = dvv; }
                 }
-            } else
+            } else {
+            // only splits that keep the prompts CLEAR of the image above; if none do,
+            // the split that sits lowest wins (the image shrinks afterwards)
+            var anyClear = false, lowest = null, lowH = null;
+            for (a = 0; a < curveL.length && !anyClear; a++) for (c = 0; c < curveR.length; c++) {
+                if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
+                if (pairClears(curveL[a].w, curveR[c].w, curveL[a].h, curveR[c].h)) { anyClear = true; break; }
+            }
             for (a = 0; a < curveL.length; a++) {
                 for (c = 0; c < curveR.length; c++) {
                     if (curveL[a].w + curveR[c].w + GAP > AVAIL + 1e-6) break;
+                    var hh = Math.max(curveL[a].h + qL, curveR[c].h + qR);
+                    if (!anyClear) {
+                        if (lowH === null || hh < lowH - 1e-6) { lowH = hh; lowest = { L: curveL[a], R: curveR[c] }; }
+                        continue;
+                    }
+                    if (!pairClears(curveL[a].w, curveR[c].w, curveL[a].h, curveR[c].h)) continue;
                     var cost = curveL[a].s + curveR[c].s +
                                LINE_COST * Math.max(curveL[a].n, curveR[c].n);
                     var dev = Math.abs(curveL[a].w - idealL) + Math.abs(curveR[c].w - idealR);
@@ -452,6 +541,8 @@ function ragPrompts() {
                         best = { L: curveL[a], R: curveR[c] }; bestCost = cost; bestDev = dev;
                     }
                 }
+            }
+            if (!anyClear) best = lowest;
             }
             if (!best) best = { L: { w: curW[tfL.id] }, R: { w: curW[tfR.id] } };   // windows can't fit side by side: keep widths
             setWidth(tfL, best.L.w);
@@ -465,6 +556,7 @@ function ragPrompts() {
             continue;
         }
         qrMoved += reseatWithQr(group, att);
+        if (!targetIds && group.length <= 2) clearImages(group[0].parentPage, group);
     }
     for (i = 0; i < inPlace.length; i++) { ragInPlace(inPlace[i]); touched.push(inPlace[i].parentPage.name + " (in place)"); }
 
@@ -477,6 +569,8 @@ function ragPrompts() {
         msg = "Ragged " + soloCount + " solo prompts and " + pairCount + " pairs.";
     }
     if (qrMoved) msg += "\nQR codes moved with their prompts: " + qrMoved + ".";
+    if (shrunk.length) msg += "\nImages shrunk to keep prompts " + CLEAR + "\" clear: p" + shrunk.join(", p") + ".";
+    if (underBleed.length) msg += "\nPrompts over full-bleed images (fix by hand): p" + underBleed.join(", p") + ".";
     if (skipped.length) msg += "\n\nSkipped (more than 2 frames on page):\n" + skipped.join("\n");
     if (quiet) return msg;
     alert(msg);
