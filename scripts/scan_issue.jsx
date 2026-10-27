@@ -70,7 +70,8 @@
     try {
         app.scriptPreferences.measurementUnit = MeasurementUnits.INCHES;
         for (var pg = 0; pg < d.pages.length; pg++) {
-            var page = d.pages[pg], tfs = page.textFrames, rs = page.rectangles;
+            var page = d.pages[pg], tfs = [], rs = page.rectangles, pi = page.allPageItems;
+            for (var q = 0; q < pi.length; q++) if (pi[q].constructor.name == "TextFrame") tfs.push(pi[q]);   // grouped prompts too
             if (!page.appliedMaster || !page.appliedMaster.isValid) noMaster.push(page.name);
             for (var a = 0; a < tfs.length; a++) {
                 if (tfs[a].label != "oscar_prompt") continue;

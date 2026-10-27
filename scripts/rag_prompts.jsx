@@ -99,6 +99,14 @@ function ragPrompts() {
     for (i = 0; i < all.length; i++) {
         if (all[i].label === LABEL && all[i].parentPage) frames.push(all[i]);
     }
+    // prompts Daniel has grouped (e.g. with their QR code) are hand-set: leave them, but say so
+    var groupedSkipped = [];
+    (function () {
+        var gi = doc.allPageItems;
+        for (var q = 0; q < gi.length; q++)
+            if (gi[q].constructor.name === "TextFrame" && gi[q].label === LABEL && gi[q].parent.constructor.name === "Group" && gi[q].parentPage)
+                groupedSkipped.push(gi[q].parentPage.name);
+    })();
     if (frames.length === 0) {
         // as-placed geometry: 3.5" wide, bottom on the bottom margin, auto-height
         for (i = 0; i < all.length; i++) {
@@ -626,6 +634,7 @@ function ragPrompts() {
     if (qrMoved) msg += "\nQR codes moved with their prompts: " + qrMoved + ".";
     if (shrunk.length) msg += "\nImages shrunk to keep prompts " + CLEAR + "\" clear: p" + shrunk.join(", p") + ".";
     if (underBleed.length) msg += "\nPrompts over full-bleed images (fix by hand): p" + underBleed.join(", p") + ".";
+    if (groupedSkipped.length) msg += "\nGrouped (hand-set) prompts left as they are: p" + groupedSkipped.join(", p") + ".";
     if (skipped.length) msg += "\n\nSkipped (more than 2 frames on page):\n" + skipped.join("\n");
     if (quiet) return msg;
     alert(msg);

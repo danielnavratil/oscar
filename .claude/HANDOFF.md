@@ -14,6 +14,9 @@ skills in `.claude/skills/mj-*` (one owner per rule; others point to it).
   edits explained.html`, `MJ44 TOC facts and quotes.md` (printed selection only),
   `MJ44 daily theme - text options.md`.
 
+## Done Oct 27 (late)
+- All pair pages re-ragged with the new script (cap, 0.4" clearance, tightest-spread tracking), except p15 (skipped on purpose) and the grouped tromigou prompt. One image shrank (p91, 90%). Scan: no prompt within 0.4" of an image.
+
 ## Open
 1. **Rag full search** (requested, not built): for every candidate width, evaluate the
    per-line tracking combos (-10/0/+10, same words per line) and pick the best rag across
@@ -28,8 +31,9 @@ skills in `.claude/skills/mj-*` (one owner per rule; others point to it).
    on p91 which Daniel showed as a good example): apply the cap or leave? Ask.
 4. **Daily theme caption 1** (hellshot514, p108) is overset: long prompt, narrow column.
    Daniel's layout call.
-5. **tromigou p13** now 7 lines vs Pacifico Retiro's 6 after the consistency edit;
-   offer `rag_selected` near its width.
+5. **tromigou p12**: its prompt is grouped with its QR code and sits on p12 at 6.36" wide
+   (over the 4.1" cap). Grouped prompts are hand-set, so the rag leaves them alone. Ask
+   Daniel whether that's intended.
 6. The TOC fact "25 of 88 are variations" comes from `event_type` in whole_month.json;
    unverified against the jobs. Spot-check or drop.
 7. Distribution CSV format: does it also apply to the subscriber HH/KOPA lists? Ask.
