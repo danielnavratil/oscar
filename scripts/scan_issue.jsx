@@ -3,8 +3,9 @@
 // Pre-flight report for the active issue document (changes nothing):
 // overset text, missing/modified links, images under 300 ppi, non-CMYK images on pages,
 // missing fonts, pink placeholder frames, empty text frames, text left on the pasteboard,
-// double spaces / space before punctuation / repeated words, and pair spreads that are
-// missing a prompt. Things it can't judge (TOC page numbers, credits, stats) still need a read.
+// double spaces / space before punctuation / repeated words, pair spreads that are
+// missing a prompt, prompts closer than 0.4" to an image (or printed over one), prompts
+// wider than 5/9 of the margin, and pages with no master. Things it can't judge (TOC page numbers, credits, stats) still need a read.
 // Optional: $.global.OSCAR_SCAN_PRESET = { docName, quiet }.
 // ───────────────────────────────────────────────────────────────
 #target indesign
@@ -59,6 +60,37 @@
         if ((prompts || imgs) && prompts != imgs) pairs.push("spread " + s + " (p" + d.spreads[s].pages[0].name + "): " + imgs + " pair images, " + prompts + " prompts");
     }
     section("PAIR SPREADS WITH A MISSING PROMPT", pairs);
+
+    // prompts must sit at least 0.4" below any image above them and be no wider than 5/9 of
+    // the margin width (rag_prompts.jsx enforces both; hand edits can break them). Measured in
+    // inches via the script setting (not the document's view, which would add undo steps);
+    // comparisons are within one page, so the ruler origin doesn't matter.
+    var su = app.scriptPreferences.measurementUnit, close = [], wide = [], noMaster = [];
+    var MAX_W = (8.375 - 1) * 5 / 9;
+    try {
+        app.scriptPreferences.measurementUnit = MeasurementUnits.INCHES;
+        for (var pg = 0; pg < d.pages.length; pg++) {
+            var page = d.pages[pg], tfs = page.textFrames, rs = page.rectangles;
+            if (!page.appliedMaster || !page.appliedMaster.isValid) noMaster.push(page.name);
+            for (var a = 0; a < tfs.length; a++) {
+                if (tfs[a].label != "oscar_prompt") continue;
+                var tb = tfs[a].geometricBounds, who = tfs[a].contents.split("\r")[0].substr(0, 24);
+                if (tb[3] - tb[1] > MAX_W + 0.02) wide.push("p" + page.name + " " + who + ": " + Math.round((tb[3] - tb[1]) * 100) / 100 + "\" wide");
+                for (var b = 0; b < rs.length; b++) {
+                    if (!rs[b].allGraphics.length) continue;
+                    var ib = rs[b].geometricBounds;
+                    if (ib[3] <= tb[1] || ib[1] >= tb[3] || ib[0] >= tb[0]) continue;   // not above / not overlapping
+                    if (ib[2] >= tb[2]) close.push("p" + page.name + " " + who + ": printed over an image");
+                    else if (tb[0] - ib[2] < 0.4 - 0.015) close.push("p" + page.name + " " + who + ": " + Math.round((tb[0] - ib[2]) * 100) / 100 + "\" below the image");
+                }
+            }
+        }
+    } finally {
+        app.scriptPreferences.measurementUnit = su;
+    }
+    section("PROMPTS WITHIN 0.4\" OF AN IMAGE", close);
+    section("PROMPTS WIDER THAN 5/9 OF THE MARGIN (4.1\")", wide);
+    section("PAGES WITH NO MASTER (cover, TOC and inside back are normal)", noMaster);
 
     var msg = "pages=" + d.pages.length + "\n" + o.join("\n");
     if (!preset.quiet) alert(msg);

@@ -398,7 +398,7 @@ function ragPrompts() {
             if (!r.allGraphics.length) continue;
             var b = r.geometricBounds;
             if (b[3] <= x0 || b[1] >= x1 || b[0] >= top) continue;
-            if (b[2] <= top - CLEAR + 1e-4) continue;
+            if (b[2] <= top - CLEAR + 0.015) continue;
             if (isFullBleed(b)) { underBleed.push(page.name); continue; }
             var newH = top - CLEAR - b[0];
             if (newH <= 0.5) { underBleed.push(page.name + " (no room)"); continue; }
