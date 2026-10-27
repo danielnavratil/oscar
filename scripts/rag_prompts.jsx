@@ -6,8 +6,8 @@
 //      paragraph scored, username line never counted. Among widths
 //      whose rag is nearly as good as the best, the one closest to
 //      half a page width wins — go wide only when the rag demands it,
-//   2. nudges per-line tracking ±10 toward the mean line ending
-//      (body + params), backing off any change that reflows lines,
+//   2. sets each line's tracking to -10, 0 or +10 (never reflowing a line),
+//      choosing the combination with the tightest spread of line endings,
 //   3. tightens the frame to the text and anchors the block to the
 //      bottom outer corner of the page margins.
 // No prompt is wider than 5/9 of the margin width (Daniel, Oct 2026), and
@@ -34,6 +34,8 @@
 // the same page keeps its width and line breaks and only moves to keep the
 // pair layout; a frame that isn't a placed prompt is ragged in place (left
 // and bottom edges kept).
+// Tracking only ($.global.OSCAR_RAG_TRACK_ONLY = [frames]): re-chooses the line
+// tracking of those frames and changes nothing else (width, breaks, position).
 // One undoable action. Set $.global.OSCAR_RAG_QUIET = true to get the
 // report as the script result instead of an alert; set
 // $.global.OSCAR_RAG_PAGES = ["12","13"] to touch up only those pages;
@@ -214,39 +216,73 @@ function ragPrompts() {
         }
         return sig.join(",");
     }
+    // Per line, tracking is -TRACK, 0 or +TRACK, and only settings that keep the line's
+    // words are allowed (no reflow). Each allowed setting is measured, then the
+    // combination with the tightest spread of line endings wins (the paragraph's last
+    // line excluded; ties go to the fewest tracked lines). Nudging each line toward the
+    // average on its own overshot: +10 moves a 9 pt line ~0.15", more than most lines
+    // are off by, so near-average lines became the longest (Daniel, MJ 44 p44).
+    // The last line may end short; if it would end past the pack it is pulled in.
     function trackParagraph(tf, pi) {
-        for (var pass = 0; pass < 2; pass++) {
-            var para = tf.paragraphs.item(pi);
-            var L = para.lines.length;
-            if (L < 2) return;
-            var ends = [], li;
-            for (li = 0; li < L; li++) ends.push(lineEnd(para.lines.item(li)));
-            var mean = 0;
-            for (li = 0; li < L; li++) mean += ends[li];
-            mean /= L;
-            var changed = false;
-            for (li = 0; li < L; li++) {
-                para = tf.paragraphs.item(pi);
-                if (li >= para.lines.length) break;
-                var line = para.lines.item(li);
-                if (line.characters.length === 0) continue;
-                var e = lineEnd(line);
-                var cur = line.characters.item(0).tracking;
-                var want = cur;
-                if (e < mean - TOL) want = TRACK;
-                else if (e > mean + TOL) want = -TRACK;
-                else continue;
-                if (want === cur) continue;
-                var c0 = line.characters.item(0).index;
-                var c1 = line.characters.item(-1).index;
-                var before = storySig(tf);
-                tf.parentStory.characters.itemByRange(c0, c1).tracking = want;
-                if (storySig(tf) !== before) {
-                    tf.parentStory.characters.itemByRange(c0, c1).tracking = cur; // reflowed — back off
-                } else changed = true;
-            }
-            if (!changed) return;
+        var para = tf.paragraphs.item(pi), L = para.lines.length;
+        if (L < 2) return;
+        var st = tf.parentStory, base = storySig(tf), k, j;
+        var ranges = [], t0 = [];
+        for (k = 0; k < L; k++) {
+            var ln = para.lines.item(k);
+            if (ln.characters.length === 0) return;
+            ranges.push([ln.characters.item(0).index, ln.characters.item(-1).index]);
+            t0.push(ln.characters.item(0).tracking);
         }
+        var opts = [];
+        for (k = 0; k < L; k++) {
+            var o = [], r = st.characters.itemByRange(ranges[k][0], ranges[k][1]);
+            for (var t = -TRACK; t <= TRACK; t += TRACK) {
+                r.tracking = t;
+                if (storySig(tf) === base) o.push({ t: t, e: lineEnd(tf.paragraphs.item(pi).lines.item(k)) });
+                r.tracking = t0[k];
+            }
+            if (!o.length) o.push({ t: t0[k], e: lineEnd(tf.paragraphs.item(pi).lines.item(k)) });
+            opts.push(o);
+        }
+        var body = L - 1, best = null, c, cands = [];
+        for (k = 0; k < body; k++) for (j = 0; j < opts[k].length; j++) cands.push(opts[k][j].e);
+        for (c = 0; c < cands.length; c++) {
+            var lo = cands[c], hi = lo, ok = true;
+            for (k = 0; k < body && ok; k++) {
+                var nearest = null;
+                for (j = 0; j < opts[k].length; j++) {
+                    var e = opts[k][j].e;
+                    if (e >= lo - 1e-6 && (nearest === null || e < nearest)) nearest = e;
+                }
+                if (nearest === null) ok = false; else if (nearest > hi) hi = nearest;
+            }
+            if (!ok) continue;
+            var chosen = [], n = 0;
+            for (k = 0; k < body; k++) {
+                var ch = null;
+                for (j = 0; j < opts[k].length; j++) {
+                    var oo = opts[k][j];
+                    if (oo.e < lo - 1e-6 || oo.e > hi + 1e-6) continue;
+                    if (ch === null || Math.abs(oo.t) < Math.abs(ch.t)) ch = oo;
+                }
+                chosen.push(ch); if (ch.t) n++;
+            }
+            var range = hi - lo;
+            if (best === null || range < best.range - 0.005 || (Math.abs(range - best.range) <= 0.005 && n < best.n))
+                best = { range: range, chosen: chosen, n: n, hi: hi };
+        }
+        var last = null;
+        for (j = 0; j < opts[L - 1].length; j++) if (opts[L - 1][j].t === 0) last = opts[L - 1][j];
+        if (!last) last = opts[L - 1][0];
+        if (best && last.e > best.hi + TOL)
+            for (j = 0; j < opts[L - 1].length; j++) if (opts[L - 1][j].e < last.e) last = opts[L - 1][j];
+        for (k = 0; k < L; k++) {
+            var want = (k < body) ? (best ? best.chosen[k].t : t0[k]) : last.t;
+            st.characters.itemByRange(ranges[k][0], ranges[k][1]).tracking = want;
+        }
+        if (storySig(tf) !== base)   // combined changes reflowed after all: put it back
+            for (k = 0; k < L; k++) st.characters.itemByRange(ranges[k][0], ranges[k][1]).tracking = t0[k];
     }
     function trackFrame(tf) { // body + params (+ ref line, harmless when single-line)
         for (var p = scoreFrom; p < tf.paragraphs.length; p++) trackParagraph(tf, p);
@@ -340,6 +376,25 @@ function ragPrompts() {
             }
             return att.length;
         });
+    }
+
+    // ── TRACKING ONLY ($.global.OSCAR_RAG_TRACK_ONLY = [frames]) ──
+    // Re-chooses line tracking on the given frames and nothing else: width, line
+    // breaks and position stay as they are (for frames Daniel has set by hand).
+    if ($.global.OSCAR_RAG_TRACK_ONLY instanceof Array) {
+        var tracked = [];
+        for (var to = 0; to < $.global.OSCAR_RAG_TRACK_ONLY.length; to++) {
+            var tfo = $.global.OSCAR_RAG_TRACK_ONLY[to];
+            if (!tfo || !tfo.isValid) continue;
+            scoreFrom = tfo.paragraphs.length > 1 ? 1 : 0;
+            trackFrame(tfo);
+            tracked.push(tfo.parentPage ? tfo.parentPage.name : "pasteboard");
+        }
+        scoreFrom = 1;
+        restoreUnits();
+        var tmsg = "Re-tracked " + tracked.length + " frame(s) on page " + tracked.join(", ") + "; widths and line breaks unchanged.";
+        if (quiet) return tmsg;
+        alert(tmsg); return;
     }
 
     // ── IN PLACE: frames that aren't placed prompts keep their left and bottom edges ──
