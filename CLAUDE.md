@@ -39,3 +39,10 @@ Internal curation tool for a Midjourney magazine. Three users (Daniel, Hongrae, 
 
 - Match the existing style in `Oscar.jsx`: inline styles, compact JSX, everything in one file.
 - Secrets live in Vercel/`.env.local` env vars, never in the repo (the repo is public).
+
+## Skills and working rules
+
+- The print workflow (new issue, pairs, profiles, daily theme, feature, From the Artist, TOC content, posters, distribution lists, pre-flight, finishing, image prep, InDesign scripting rules) is in `.claude/skills/mj-*`. Each rule lives in one skill; the others point to it. Update the owning skill when a process changes. Open items: `.claude/HANDOFF.md`.
+- Commit small changes directly (git is the safety net), then offer to push: Daniel checks the deployed app, so unpushed work looks missing.
+- "Stop" means stop now. Killing osascript doesn't stop an InDesign script; make it fail instead. Never kill any of Daniel's processes on inference: report evidence and let him decide.
+- Never save MJ_NN.indd unless asked; it's usually open with his unsaved work.
