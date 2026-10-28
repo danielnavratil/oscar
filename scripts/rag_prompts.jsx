@@ -49,7 +49,7 @@ function ragPrompts() {
     // ── CONFIG ─────────────────────────────────────────────────
     var PAGE_W  = 8.375, PAGE_H = 10.875, MARGIN = 0.5;
     var GAP     = 0.1667;
-    var MIN_W   = 2.0;
+    var MIN_W   = 1.75;
     var AVAIL   = PAGE_W - 2 * MARGIN;      // 7.375
     var MAX_W   = AVAIL * 5 / 9;            // widest a prompt may go (~4.1")
     var CLEAR   = 0.4;                      // prompt never closer than this to an image above it
