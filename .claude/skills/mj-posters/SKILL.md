@@ -15,7 +15,7 @@ Ask up front: the Midjourney version for each credit (posts rarely say), and any
    q = qrcode.QRCode(error_correction=ERROR_CORRECT_M, box_size=40, border=0); q.add_data(url); q.make(fit=True)
    ```
    (use the python3 that has `qrcode` + Pillow, e.g. `/usr/local/bin/python3`).
-3. **Doc**: copy the previous issue's `MJ NN Posters.indd` to `Issue NN/MJ NN Posters.indd` (`cp -n`), then in one script (mj-indesign-basics): relink each page's poster image and QR to the new files (match the old links by name), refit the image fill-proportionally + centered and the QR proportionally, and change the credit text "@handle" / forced line break / "Midjourney V8.x" (12 pt, Diatype Heavy; edit the characters so the formatting stays). Save the posters doc (it's a new file). An old hidden credit frame from an earlier issue sits behind the image on each page: leave it.
+3. **Doc**: copy the previous issue's `MJ NN Posters.indd` to `Issue NN/MJ NN Posters.indd` (`cp -n`), then in one script (mj-indesign-basics): relink each page's poster image and QR to the new files (match the old links by name), refit the image fill-proportionally + centered; fit the QR proportionally, then shrink the code to 93.3% of its white frame, centered (0.013" white margin all round, as in issue 43: a flush code looks cropped on the poster), and change the credit text "@handle" / forced line break / "Midjourney V8.x" (12 pt, Diatype Heavy; edit the characters so the formatting stays). Save the posters doc (it's a new file). An old hidden credit frame from an earlier issue sits behind the image on each page: leave it.
 4. Export a preview, send it, and report ppi per poster.
 
 ## Finish (after Daniel's crop nudges, not before, or the KOPA copy needs the same nudges)
