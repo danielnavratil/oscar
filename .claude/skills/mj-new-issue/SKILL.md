@@ -18,7 +18,7 @@ Ask all questions up front in one message, then do the whole job without checkin
 
 ## 2. Oscar projects (shared database: everyone sees changes live)
 
-Each issue usually has two projects: the issue (`id "NN"`, file `NN.json`) and its daily theme (`id "NN-DT"`, file `NN-dt.json`). They are added in Oscar's project picker (Add project), which uploads the JSON to Supabase Storage (`issue-json` bucket), adds the row in `issues`, and updates `projects.json`.
+Each issue usually has two projects: the issue (`id "NN"`, file `NN.json`) and its daily theme (`id "NN-DT"`, file `NN-dt.json`). They are added in Oscar's project picker (Add project), which uploads the JSON to Supabase Storage (`issue-json` bucket), adds the row in `issues`, and updates `projects.json`. From Caleb's materials email in one go (upload from the command line + the Slack group schedule): mj-kickoff.
 
 - The ID decides the storage file name. Reusing an ID overwrites the other project's images and makes both share bookmarks/votes; this happened in 44 (daily theme added as "44"). The app now refuses a used ID, but if you do anything by hand, use a distinct ID.
 - If images look wrong after a replace: Storage files are cached for an hour; the loader now busts the cache, and the browser may remember the old project name in localStorage (re-pick the project in the picker).
