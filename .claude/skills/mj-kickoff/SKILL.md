@@ -57,7 +57,7 @@ ID and clash rules: mj-new-issue §2.
 - Group ranges: prepare.py's for the main project, unchanged. They match what each person sees in Oscar.
 - Default order Daniel / Chase / Hongrae. If Daniel names a swap, use it (Val Yang `U0A95L151NJ`; anyone else via slack_search_users).
 - No timeline. Optional closing line from Daniel (MJ 44 had one about when primary selects are due): ask in the checkpoint message.
-- The exact message goes in the checkpoint message. Post it with slack_send_message only after both projects show up in `list` (the message says the images are ready), then give the link. No Slack tool in the session: give him the text to paste.
+- The exact message goes in the checkpoint message. Post it with slack_send_message as soon as the whole-month project (`NN`) shows up in `list` (the message says its images are ready), then give the link. The daily theme doesn't gate the post: Daniel does all of it himself, so `NN-DT` can be added whenever Caleb sends it. No Slack tool in the session: give him the text to paste.
 
 ## 5. Summary
 
