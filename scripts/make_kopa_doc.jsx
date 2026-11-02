@@ -3,8 +3,8 @@
 // Makes the KOPA (PSO) print version of the active document:
 //   1. saves a copy next to it as "<name> KOPA.indd" (the open doc is not saved or changed),
 //   2. opens the copy and runs swap_print_profile.jsx (same folder) toward KOPA,
-//   3. swaps the Hemlock inside-back ad for "KOPA Inside Back*.jpg" from <issue>/Links/
-//      (copy it in from the previous issue's Links folder first),
+//   3. swaps the Hemlock inside-back ad for "KOPA Inside Back*.jpg" and "HH Inside Front*"
+//      for "KOPA Inside Front*.jpg", both from <issue>/Links/ (copy them in first),
 //   4. reports anything still linked to an HH file, then saves the copy.
 // Works for the issue (MJ_NN.indd) and the posters (MJ NN Posters.indd).
 // Optional preset: $.global.OSCAR_KOPA_PRESET = { docName, quiet }.
@@ -25,24 +25,29 @@
     $.global.OSCAR_SWAP_PRESET = { docName: k.name, toKopa: true, quiet: true };
     try { report.push(String($.evalFile(swap))); } finally { $.global.OSCAR_SWAP_PRESET = undefined; }
 
-    var ads = Folder(dir + "/Links").getFiles("KOPA Inside Back*.jpg");
+    // inside covers: the HH doc's SWOP ads → their PSO twins in <issue>/Links/
+    var covers = [[/^Hemlock Inside Back/, "KOPA Inside Back*.jpg", "inside back is still the Hemlock ad"],
+                  [/^HH Inside Front/, "KOPA Inside Front*.jpg", "inside front is still the HH (SWOP) file"]];
     var old = app.scriptPreferences.measurementUnit;
     app.scriptPreferences.measurementUnit = MeasurementUnits.INCHES;
     try {
-        var L = k.links.everyItem().getElements();
-        for (var i = 0; i < L.length; i++) if (/^Hemlock Inside Back/.test(L[i].name)) {
-            if (!ads.length) { report.push("No KOPA Inside Back*.jpg in " + dir + "/Links — inside back is still the Hemlock ad."); break; }
-            var g = L[i].parent, gb = g.geometricBounds;
-            L[i].relink(ads[0]);
-            k.links.everyItem().getElements()[i].parent.geometricBounds = gb;   // keep crop
-            report.push("Inside back → " + ads[0].name);
+        for (var c = 0; c < covers.length; c++) {
+            var ads = Folder(dir + "/Links").getFiles(covers[c][1]);
+            var L = k.links.everyItem().getElements();
+            for (var i = 0; i < L.length; i++) if (covers[c][0].test(L[i].name)) {
+                if (!ads.length) { report.push("No " + covers[c][1] + " in " + dir + "/Links — " + covers[c][2] + "."); break; }
+                var g = L[i].parent, gb = g.geometricBounds;
+                L[i].relink(ads[0]);
+                k.links.everyItem().getElements()[i].parent.geometricBounds = gb;   // keep crop
+                report.push(covers[c][1].replace("*.jpg", "") + " → " + decodeURI(ads[0].name));
+            }
         }
     } finally { app.scriptPreferences.measurementUnit = old; }
 
     var hh = [], bad = [];
     var L2 = k.links.everyItem().getElements();
     for (var j = 0; j < L2.length; j++) {
-        if (/HH Links|_HH\.|Hemlock/.test(L2[j].filePath)) hh.push(L2[j].name);
+        if (/HH Links|_HH\.|Hemlock|\/HH Inside/.test(L2[j].filePath)) hh.push(L2[j].name);
         if (L2[j].status != LinkStatus.NORMAL) bad.push(L2[j].name);
     }
     report.push("Still HH: " + (hh.join(", ") || "none"));
