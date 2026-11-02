@@ -1,11 +1,11 @@
 ---
 name: mj-issue-finishing
-description: Takes a Midjourney magazine issue from "everything is placed" to print PDFs — spreading the non-pair sections evenly through the pairs, the TOC, the pre-flight, the KOPA (Euro press) copy with its inside-cover ads, the one-export-per-document PDFs for both printers, and the final HH↔KOPA check; also one-off image edits that must be mirrored into both editions. Daniel calls this whole run (KOPA doc, PDFs, final check, for the issue AND the posters doc) "finishing". Use it when Daniel says "finishing", "finish the issue", "make the KOPA doc", "export the PDFs", "move the sections around", "spread out the profiles", or brightens, retouches or removes something from an image late.
+description: Takes a Midjourney magazine issue from "everything is placed" to print PDFs — spreading the non-pair sections evenly through the pairs, the TOC, the pre-flight, the KOPA (Euro press) copy with its inside-cover ads, the one-export-per-document PDFs for both printers, and the final HH↔KOPA check; also one-off image edits that must be mirrored into both editions. Daniel calls this whole run (KOPA doc, PDFs, final check, package zip, for the issue AND the posters doc) "finishing". Use it when Daniel says "finishing", "finish the issue", "make the KOPA doc", "export the PDFs", "move the sections around", "spread out the profiles", or brightens, retouches or removes something from an image late.
 ---
 
 # Finishing an issue
 
-Order: sections → TOC (mj-toc) → pre-flight (mj-preflight) → KOPA doc → PDFs → final pass. "Finishing" always includes the posters doc (`MJ NN Posters.indd`): open it, check links/fonts/text, then the same KOPA, export and HH ↔ KOPA steps (mj-posters). The KOPA preset compresses harder than HEMLOCK: in 43 and 44 the KOPA issue PDF is ~190 MB against ~1.7 GB of HH pages, and the posters ~27 MB against ~300 MB. That ratio is normal.
+Order: sections → TOC (mj-toc) → pre-flight (mj-preflight) → KOPA doc → PDFs → final pass → package. "Finishing" always includes the posters doc (`MJ NN Posters.indd`): open it, check links/fonts/text, then the same KOPA, export and HH ↔ KOPA steps (mj-posters). The KOPA preset compresses harder than HEMLOCK: in 43 and 44 the KOPA issue PDF is ~190 MB against ~1.7 GB of HH pages, and the posters ~27 MB against ~300 MB. That ratio is normal.
 
 ## 1. Spread the non-pair sections through the pairs
 
@@ -30,6 +30,10 @@ mj-toc, then mj-preflight. Fix only what Daniel OKs.
 ## 5. Final pass
 
 HH ↔ KOPA diff (stories by id + item geometry) and re-sync; re-export any PDF older than the last .indd edit; pages without a master; nothing deleted that is artwork (see mj-preflight on empty frames).
+
+## 6. Package
+
+Daniel uploads a zip of the packaged HH doc to his work drive. Package without saving his open MJ_NN.indd: `saveACopy` to the scratchpad, open the copy without a window, `packageForPrint(<issue>/MJ_NN Packaged, fonts, links, profiles, false, hidden layers, ignore preflight, report, idml, pdf, "[High Quality Print]", false, "", false)`, close the copy. It contains the .indd, .idml, a one-file PDF, Links, Document fonts and Instructions.txt (check its FONTS and LINKS lines: 0 missing; Adobe Fonts show as "Protected" and are never copied, as in 43). Then `ditto -c -k --keepParent "MJ_NN Packaged" "MJ_NN Packaged.zip"` (about 3 GB). Ask where to upload it.
 
 ## Late image edits
 
