@@ -25,12 +25,8 @@ skills in `.claude/skills/mj-*` (one owner per rule; others point to it).
    lines, small penalty so it's used only when it clearly helps. Goal = even line endings
    (tightest spread; Daniel approved the p44 result). Test on a COPY of MJ_44 first and
    time it (88 frames × ~34 widths × 2 hyphenation modes).
-2. **p15**: prompt under a full-bleed image sits 0.25" below it (rule is 0.4"); at the
-   4.1" cap it would overlap. Daniel to decide (make image inset / hand fix).
 3. **17 prompts wider than the 4.1" cap** (placed before the cap existed, incl. weskiii
    on p91 which Daniel showed as a good example): apply the cap or leave? Ask.
-4. **Daily theme caption 1** (hellshot514, p108) is overset: long prompt, narrow column.
-   Daniel's layout call.
 5. **tromigou p12**: its prompt is grouped with its QR code and sits on p12 at 6.36" wide
    (over the 4.1" cap). Grouped prompts are hand-set, so the rag leaves them alone. Ask
    Daniel whether that's intended.
