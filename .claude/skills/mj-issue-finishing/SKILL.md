@@ -1,11 +1,11 @@
 ---
 name: mj-issue-finishing
-description: Takes a Midjourney magazine issue from "everything is placed" to print PDFs — spreading the non-pair sections evenly through the pairs, the TOC, the pre-flight, the KOPA (Euro press) copy with its inside-cover ads, the one-export-per-document PDFs for both printers, and the final HH↔KOPA check; also one-off image edits that must be mirrored into both editions. Daniel calls this whole run (KOPA doc, PDFs, final check) "finishing". Use it when Daniel says "finishing", "finish the issue", "make the KOPA doc", "export the PDFs", "move the sections around", "spread out the profiles", or brightens, retouches or removes something from an image late.
+description: Takes a Midjourney magazine issue from "everything is placed" to print PDFs — spreading the non-pair sections evenly through the pairs, the TOC, the pre-flight, the KOPA (Euro press) copy with its inside-cover ads, the one-export-per-document PDFs for both printers, and the final HH↔KOPA check; also one-off image edits that must be mirrored into both editions. Daniel calls this whole run (KOPA doc, PDFs, final check, for the issue AND the posters doc) "finishing". Use it when Daniel says "finishing", "finish the issue", "make the KOPA doc", "export the PDFs", "move the sections around", "spread out the profiles", or brightens, retouches or removes something from an image late.
 ---
 
 # Finishing an issue
 
-Order: sections → TOC (mj-toc) → pre-flight (mj-preflight) → KOPA doc → PDFs → final pass. Posters go through the same KOPA/export steps (mj-posters).
+Order: sections → TOC (mj-toc) → pre-flight (mj-preflight) → KOPA doc → PDFs → final pass. "Finishing" always includes the posters doc (`MJ NN Posters.indd`): open it, check links/fonts/text, then the same KOPA, export and HH ↔ KOPA steps (mj-posters). The KOPA preset compresses harder than HEMLOCK: in 43 and 44 the KOPA issue PDF is ~190 MB against ~1.7 GB of HH pages, and the posters ~27 MB against ~300 MB. That ratio is normal.
 
 ## 1. Spread the non-pair sections through the pairs
 
