@@ -207,12 +207,13 @@ const COPY_EDIT_SYSTEM = `Copy-edit a Midjourney prompt body for a print magazin
 Apply:
 1. Fix spelling errors
 2. Remove redundant or repeated words/concepts
-3. Any named artist, brand, franchise, or film that lacks an attribution prefix — add "in the style of" or "inspired by", whichever reads more naturally. Camera brands (Canon, Nikon, Hasselblad, Sony, Leica, Fujifilm, Kodak) are exempt.
-4. Preserve lowercase throughout — no capitalisation of any kind, including proper nouns, brand names, "3d", "ai", etc.
+3. Any named artist, franchise, or film that lacks an attribution prefix — add "in the style of" or "inspired by", whichever reads more naturally ("steven klein" → "inspired by steven klein").
+4. A brand name (fashion, cars, drinks, food, tech, any company or logo) may never print as the thing in the image. Wherever it appears — subject, object, ad, logo — rewrite it as a style ("gucci ad" → "gucci style ad", "mercedes benz logo skull" → "mercedes benz inspired logo skull"), or drop the name when it's just an object in the scene ("a red coca-cola can" → "a red cola can"). Camera brands (Canon, Nikon, Hasselblad, Sony, Leica, Fujifilm, Kodak) are exempt.
+5. Preserve lowercase throughout — no capitalisation of any kind, including proper nouns, brand names, "3d", "ai", etc.
 
 Return ONLY valid JSON, no other text:
 {"body":"...","flagged":false,"flag_reason":null}
-Set flagged:true if uncertain about a change or if the prompt warrants human review.`;
+Set flagged:true if uncertain about a change or if the prompt warrants human review. Always set flagged:true with flag_reason "brand: <name>" when the prompt named a brand (rule 4), even after rewriting it.`;
 
 // ── GLOBAL STYLES ──────────────────────────────────────────────
 function GlobalStyles() {
@@ -517,8 +518,9 @@ export default function App() {
           method: "POST", headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 1000,
+            model: "claude-sonnet-5-5",
+            max_tokens: 4000,
+            output_config: { effort: "low" },
             system: [{ type: "text", text: COPY_EDIT_SYSTEM, cache_control: { type: "ephemeral" } }],
             messages: [{ role: "user", content: mechBody }]
           })
@@ -526,9 +528,12 @@ export default function App() {
       } finally { clearTimeout(timeout); }
       const data = await res.json();
       if (!res.ok) { addNotice(claudeErrorMessage(res.status, data)); return; }
-      const text = (data.content?.[0]?.text || "").trim();
+      // Sonnet 5.5 puts a thinking block first; the answer is the text block
+      const text = (data.content?.find(b => b.type === "text")?.text || "").trim();
       let claudeBody = mechBody, flagged = false, flagReason = null;
-      try {
+      if (data.stop_reason === "refusal" || !text) {
+        flagged = true; flagReason = "claude returned no edit — using mechanical clean";
+      } else try {
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
         claudeBody = (parsed.body || mechBody).toLowerCase().trim();
