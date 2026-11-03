@@ -14,7 +14,7 @@ Every mj-* skill that touches an .indd follows these rules. They exist because e
   osascript -e 'with timeout of 900 seconds' -e 'tell application id "com.adobe.InDesign" to do script (POSIX file "/path/x.jsx") language javascript' -e 'end timeout'
   ```
   The value of the script's last expression comes back on stdout, so end with a summary string. Placement and other big runs take minutes: use a long timeout.
-- The repo scripts live in `/Users/daniel/Code/oscar-v1/scripts/` (canonical). InDesign's Scripts panel runs the copies in `~/Library/Preferences/Adobe InDesign/Version 21.0/en_US/Scripts/Scripts Panel/Midjourney/`. After editing a repo script, copy it there; keep all Oscar .jsx files together (they load each other from their own folder).
+- The repo scripts live in `/Users/daniel/Code/oscar-asimov/scripts/` (canonical). InDesign's Scripts panel runs the copies in `~/Library/Preferences/Adobe InDesign/Version 21.0/en_US/Scripts/Scripts Panel/Midjourney/`. After editing a repo script, copy it there; keep all Oscar .jsx files together (they load each other from their own folder).
 - Most repo scripts accept a preset global so they run without dialogs: set `$.global.OSCAR_..._PRESET = {...}`, `$.evalFile(File(repoScript))`, then clear the global in a `finally`. Each script's header comment documents its preset.
 - Target documents by name (`app.documents.itemByName("MJ_44.indd")`), not `activeDocument`: Daniel may have another doc in front.
 - To read a closed document, `app.open(file, false)` (hidden) and close it with `SaveOptions.NO` when done.

@@ -26,7 +26,7 @@ Upscale only what prints under 300 ppi at its final size. Upscaling a file that'
 
 ## 3. Convert to CMYK
 
-`python3 /Users/daniel/Code/oscar-v1/scripts/convert_cmyk.py <in_dir> <out_dir> [file ...]` writes `<out_dir>/HH Links/<name>.jpg` (U.S. Web Coated SWOP v2, US press) and `<out_dir>/KOPA Links/<name>.jpg` (PSO Coated v3, Euro press): relative colorimetric + black point compensation, profile embedded exactly as Photoshop does, 72 dpi, resumable. ~1 min per issue. Images in an inset frame are converted the same way. Put non-upscaled originals through it directly (copy them into the input folder or pass the file names).
+`python3 /Users/daniel/Code/oscar-asimov/scripts/convert_cmyk.py <in_dir> <out_dir> [file ...]` writes `<out_dir>/HH Links/<name>.jpg` (U.S. Web Coated SWOP v2, US press) and `<out_dir>/KOPA Links/<name>.jpg` (PSO Coated v3, Euro press): relative colorimetric + black point compensation, profile embedded exactly as Photoshop does, 72 dpi, resumable. ~1 min per issue. Images in an inset frame are converted the same way. Put non-upscaled originals through it directly (copy them into the input folder or pass the file names).
 
 ## 4. File it where the section expects
 

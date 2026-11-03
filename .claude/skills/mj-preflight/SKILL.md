@@ -9,7 +9,7 @@ Run the repo scan (it changes nothing and adds nothing to the undo stack), follo
 
 ```js
 $.global.OSCAR_SCAN_PRESET = { docName: "MJ_44.indd", quiet: true };
-var r; try { r = $.evalFile(File("/Users/daniel/Code/oscar-v1/scripts/scan_issue.jsx")); }
+var r; try { r = $.evalFile(File("/Users/daniel/Code/oscar-asimov/scripts/scan_issue.jsx")); }
 finally { $.global.OSCAR_SCAN_PRESET = undefined; }
 r;
 ```

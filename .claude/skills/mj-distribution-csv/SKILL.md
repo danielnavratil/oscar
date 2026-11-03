@@ -23,6 +23,6 @@ Always check and report, without deleting anything:
 
 ## Subscriber address list → printer files
 
-`python3 /Users/daniel/Code/oscar-v1/scripts/sort_addresses.py "<address list>.csv" "Issue NN/MJNN"` looks up each subscriber's country in the production-zones table (`Resources/MJ 2024 Production Zones - ZONES.csv`), appends printer/country/region and writes `MJNN_HH.csv` and `MJNN_KOPA.csv` with the original row order kept (the printers want export order). Report unmatched countries.
+`python3 /Users/daniel/Code/oscar-asimov/scripts/sort_addresses.py "<address list>.csv" "Issue NN/MJNN"` looks up each subscriber's country in the production-zones table (`Resources/MJ 2024 Production Zones - ZONES.csv`), appends printer/country/region and writes `MJNN_HH.csv` and `MJNN_KOPA.csv` with the original row order kept (the printers want export order). Report unmatched countries.
 
 Whether the distribution format above also applies to these subscriber files is unconfirmed: ask Daniel before converting them.

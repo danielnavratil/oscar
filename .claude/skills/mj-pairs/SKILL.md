@@ -15,7 +15,7 @@ Give Daniel a short plan and wait for his go before starting (he likes to see it
 
 Run the pipeline in the background from the issue folder and wait for the completion notice:
 ```bash
-/bin/bash /Users/daniel/Code/oscar-v1/scripts/oscar_pipeline.sh "$PWD/oscar-NN-pairs.json" > pipeline_run.out 2>&1
+/bin/bash /Users/daniel/Code/oscar-asimov/scripts/oscar_pipeline.sh "$PWD/oscar-NN-pairs.json" > pipeline_run.out 2>&1
 ```
 It downloads, upscales 4x, converts to `oscar-NN-pairs-output/{HH Links,KOPA Links}` and deletes `upscaled/` when both are complete. Check the first downloads early: a wall of 403s means the Arc login is missing (mj-image-prep). The rules for upscaling/conversion are mj-image-prep's; the pipeline already follows them.
 
@@ -23,7 +23,7 @@ Then compare each downloaded image's real shape with its JSON `aspect` (2% toler
 
 ## 3. Place
 
-Run `place_oscar_pairs.jsx` with its preset on the open doc (mj-indesign-basics for running; paths in these skills are relative to the oscar-v1 repo root):
+Run `place_oscar_pairs.jsx` with its preset on the open doc (mj-indesign-basics for running; paths in these skills are relative to the oscar-asimov repo root):
 ```js
 $.global.OSCAR_PRESET = { docName: "MJ_NN.indd", jsonPath: base + "oscar-NN-pairs.json",
   imagesFolder: base + "oscar-NN-pairs-output/HH Links", afterPage: "3", autoConfirm: true, quiet: true };
